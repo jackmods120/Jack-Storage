@@ -1,7 +1,7 @@
-// api/users.js — بەڕێوەبردنی بەکارهێنەران (GET, PUT, DELETE)
+// api/users.js — بەڕێوەبردنی بەکارهێنەران (GET, POST, PUT, DELETE)
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
@@ -17,11 +17,24 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ success: true, users });
     }
 
+    // ════ POST — زیادکردنی بەکارهێنەر ════
+    if (req.method === 'POST') {
+      const { email, name, role } = req.body;
+      if (!email) return res.status(400).json({ error: 'email required' });
+      const user = { email, name: name || '', role: role || 'user', createdAt: Date.now() };
+      const fbRes = await fetch(`${DB_URL}/users.json`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(user),
+      });
+      const fbData = await fbRes.json();
+      return res.status(200).json({ success: true, id: fbData.name, user });
+    }
+
     // ════ PUT — گۆڕینی ڕۆڵ (body: { email, role }) ════
     if (req.method === 'PUT') {
       const { email, role } = req.body;
       if (!email || !role) return res.status(400).json({ error: 'email and role required' });
-      // دۆزینەوەی بەکارهێنەر بە email
       const fbRes = await fetch(`${DB_URL}/users.json`);
       const fbData = await fbRes.json();
       if (!fbData) return res.status(404).json({ error: 'User not found' });
