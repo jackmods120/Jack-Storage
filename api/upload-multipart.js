@@ -116,8 +116,17 @@ module.exports = function handler(req, res) {
 
       // ── ناردن بۆ Telegram ────────────────────────────────
       const tgBoundary = '----TGBoundary' + Date.now();
-      const endpoint   = fileType === 'video' ? 'sendVideo' : 'sendDocument';
-      const fieldName  = fileType === 'video' ? 'video'    : 'document';
+      let endpoint  = 'sendDocument';
+let fieldName = 'document';
+
+if (fileType === 'video') {
+  endpoint = 'sendVideo';
+  fieldName = 'video';
+}
+else if (fileType === 'image') {
+  endpoint = 'sendPhoto';
+  fieldName = 'photo';
+}
 
       let headerStr =
         '--' + tgBoundary + '\r\n' +
@@ -175,9 +184,22 @@ module.exports = function handler(req, res) {
               return res.status(500).json({ error: data.description || 'Telegram error' });
             }
             const msg     = data.result;
-            const fileId  = fileType === 'video' ? msg.video?.file_id  : msg.document?.file_id;
-            const thumbId = fileType === 'video'
-              ? (msg.video?.thumbnail?.file_id || msg.video?.thumb?.file_id || '') : '';
+            let fileId = '';
+
+if (fileType === 'video') {
+  fileId = msg.video?.file_id || '';
+}
+else if (fileType === 'image') {
+  fileId = msg.photo?.[msg.photo.length - 1]?.file_id || '';
+}
+else {
+  fileId = msg.document?.file_id || '';
+}
+            let thumbId = '';
+
+if (fileType === 'video') {
+  thumbId = msg.video?.thumbnail?.file_id || msg.video?.thumb?.file_id || '';
+}
             return res.status(200).json({
               success: true, file_id: fileId, thumb_id: thumbId,
               type: fileType, message_id: msg.message_id,
