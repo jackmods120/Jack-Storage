@@ -6,7 +6,6 @@
     "api/media.js":            { "maxDuration": 30,  "memory": 512  },
     "api/posts.js":            { "maxDuration": 10  },
     "api/like.js":             { "maxDuration": 10  },
-    "api/users.js":            { "maxDuration": 10  },
     "api/comments.js":         { "maxDuration": 10  }
   }
 }
