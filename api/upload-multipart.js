@@ -1,12 +1,10 @@
-// api/upload-multipart.js
-// ستریمی ڕاستەوخۆ بۆ Telegram — فایل لە RAM نانرێت
+// api/upload-multipart.js — Fixed version with proper timeout handling
 
 module.exports.config = {
   api: { bodyParser: false, responseLimit: false },
 };
 
 const https = require('https');
-const http  = require('http');
 
 module.exports = function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -26,26 +24,46 @@ module.exports = function handler(req, res) {
   if (!bMatch) return res.status(400).json({ error: 'No boundary' });
   const boundary = bMatch[1];
 
-  // ── بخوێنە بۆ RAM — بەڵام بە chunk بچووک ────────────────
+  // ── بخوێنە بۆ RAM ────────────────────────────────────────
   const chunks = [];
   let totalSize = 0;
-  const MAX = 350 * 1024 * 1024; // 350MB سنوور
+  const MAX = 50 * 1024 * 1024; // 50MB سنوور (Vercel free limit)
+
+  // ── Global timeout: 55 چرکە (پێش Vercel 60s limit) ───────
+  let finished = false;
+  const globalTimer = setTimeout(() => {
+    if (!finished) {
+      finished = true;
+      try { res.status(504).json({ error: 'Upload timeout - try a smaller file' }); } catch(e) {}
+    }
+  }, 55000);
 
   req.on('data', chunk => {
     totalSize += chunk.length;
     if (totalSize > MAX) {
       req.destroy();
-      return res.status(413).json({ error: 'File too large (max 350MB)' });
+      if (!finished) {
+        finished = true;
+        clearTimeout(globalTimer);
+        return res.status(413).json({ error: 'File too large (max 50MB on free plan)' });
+      }
+      return;
     }
     chunks.push(chunk);
   });
 
-  req.on('error', err => res.status(500).json({ error: err.message }));
+  req.on('error', err => {
+    if (!finished) {
+      finished = true;
+      clearTimeout(globalTimer);
+      res.status(500).json({ error: err.message });
+    }
+  });
 
   req.on('end', () => {
     try {
       const raw = Buffer.concat(chunks);
-      chunks.length = 0; // بەیاری GC
+      chunks.length = 0;
 
       // ── Parse multipart ──────────────────────────────────
       const delim     = Buffer.from('\r\n--' + boundary);
@@ -57,7 +75,11 @@ module.exports = function handler(req, res) {
       let fileType   = 'image';
 
       let pos = indexOf(raw, firstLine, 0);
-      if (pos === -1) return res.status(400).json({ error: 'Bad multipart' });
+      if (pos === -1) {
+        clearTimeout(globalTimer);
+        finished = true;
+        return res.status(400).json({ error: 'Bad multipart' });
+      }
       pos += firstLine.length;
 
       while (pos < raw.length) {
@@ -77,7 +99,7 @@ module.exports = function handler(req, res) {
             if (fnM) fileName = fnM[1];
             const ctM = header.match(/Content-Type:\s*([^\r\n]+)/i);
             if (ctM) mimeType = ctM[1].trim();
-            fileBuffer = Buffer.from(body); // کۆپی دەکات
+            fileBuffer = Buffer.from(body);
           }
         }
         if (bodyEnd === -1) break;
@@ -87,24 +109,33 @@ module.exports = function handler(req, res) {
       }
 
       if (!fileBuffer || fileBuffer.length === 0) {
-        return res.status(400).json({ error: 'No file data' });
+        clearTimeout(globalTimer);
+        finished = true;
+        return res.status(400).json({ error: 'No file data parsed' });
       }
 
-      // ── ناردن بۆ Telegram بە Node https ─────────────────
+      // ── ناردن بۆ Telegram ────────────────────────────────
       const tgBoundary = '----TGBoundary' + Date.now();
       const endpoint   = fileType === 'video' ? 'sendVideo' : 'sendDocument';
       const fieldName  = fileType === 'video' ? 'video'    : 'document';
 
-      const headerPart = Buffer.from(
+      let headerStr =
         '--' + tgBoundary + '\r\n' +
         'Content-Disposition: form-data; name="chat_id"\r\n\r\n' +
-        CHANNEL_ID + '\r\n' +
-        '--' + tgBoundary + '\r\n' +
-        (fileType === 'video' ? '--' + tgBoundary + '\r\nContent-Disposition: form-data; name="supports_streaming"\r\n\r\ntrue\r\n' : '') +
+        CHANNEL_ID + '\r\n';
+
+      if (fileType === 'video') {
+        headerStr +=
+          '--' + tgBoundary + '\r\n' +
+          'Content-Disposition: form-data; name="supports_streaming"\r\n\r\ntrue\r\n';
+      }
+
+      headerStr +=
         '--' + tgBoundary + '\r\n' +
         'Content-Disposition: form-data; name="' + fieldName + '"; filename="' + fileName + '"\r\n' +
-        'Content-Type: ' + mimeType + '\r\n\r\n'
-      );
+        'Content-Type: ' + mimeType + '\r\n\r\n';
+
+      const headerPart = Buffer.from(headerStr);
       const footerPart = Buffer.from('\r\n--' + tgBoundary + '--\r\n');
       const totalLen   = headerPart.length + fileBuffer.length + footerPart.length;
 
@@ -120,9 +151,25 @@ module.exports = function handler(req, res) {
 
       const tgReq = https.request(tgOptions, tgRes => {
         let body = '';
+        // ── Timeout بۆ وەڵامی Telegram ───────────────────
+        tgRes.setTimeout(40000, () => {
+          tgRes.destroy();
+          if (!finished) {
+            finished = true;
+            clearTimeout(globalTimer);
+            try { res.status(504).json({ error: 'Telegram response timeout' }); } catch(e) {}
+          }
+        });
         tgRes.on('data', d => body += d);
         tgRes.on('end', () => {
+          if (finished) return;
+          finished = true;
+          clearTimeout(globalTimer);
           try {
+            // دڵنیابوون body تەواوە
+            if (!body || body.trim() === '') {
+              return res.status(502).json({ error: 'Empty response from Telegram' });
+            }
             const data = JSON.parse(body);
             if (!data.ok) {
               return res.status(500).json({ error: data.description || 'Telegram error' });
@@ -136,19 +183,47 @@ module.exports = function handler(req, res) {
               type: fileType, message_id: msg.message_id,
             });
           } catch(e) {
-            return res.status(500).json({ error: 'Parse TG response: ' + e.message });
+            try { res.status(500).json({ error: 'Parse TG response: ' + e.message + ' | body: ' + body.substring(0, 100) }); } catch(e2) {}
+          }
+        });
+        tgRes.on('error', e => {
+          if (!finished) {
+            finished = true;
+            clearTimeout(globalTimer);
+            try { res.status(500).json({ error: 'TG response error: ' + e.message }); } catch(e2) {}
           }
         });
       });
 
-      tgReq.on('error', e => res.status(500).json({ error: 'TG request: ' + e.message }));
+      // ── Timeout بۆ connectکردن بۆ Telegram ───────────────
+      tgReq.setTimeout(45000, () => {
+        tgReq.destroy();
+        if (!finished) {
+          finished = true;
+          clearTimeout(globalTimer);
+          try { res.status(504).json({ error: 'Telegram connection timeout' }); } catch(e) {}
+        }
+      });
+
+      tgReq.on('error', e => {
+        if (!finished) {
+          finished = true;
+          clearTimeout(globalTimer);
+          try { res.status(500).json({ error: 'TG request error: ' + e.message }); } catch(e2) {}
+        }
+      });
+
       tgReq.write(headerPart);
       tgReq.write(fileBuffer);
       tgReq.write(footerPart);
       tgReq.end();
 
     } catch(e) {
-      return res.status(500).json({ error: e.message });
+      if (!finished) {
+        finished = true;
+        clearTimeout(globalTimer);
+        try { res.status(500).json({ error: e.message }); } catch(e2) {}
+      }
     }
   });
 };
