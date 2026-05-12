@@ -1,4 +1,4 @@
-// api/upload-multipart.js — Fixed version with proper timeout handling
+// api/upload-multipart.js — Fixed version with proper image handling
 
 module.exports.config = {
   api: { bodyParser: false, responseLimit: false },
@@ -24,12 +24,10 @@ module.exports = function handler(req, res) {
   if (!bMatch) return res.status(400).json({ error: 'No boundary' });
   const boundary = bMatch[1];
 
-  // ── بخوێنە بۆ RAM ────────────────────────────────────────
   const chunks = [];
   let totalSize = 0;
-  const MAX = 50 * 1024 * 1024; // 50MB سنوور (Vercel free limit)
+  const MAX = 50 * 1024 * 1024;
 
-  // ── Global timeout: 55 چرکە (پێش Vercel 60s limit) ───────
   let finished = false;
   const globalTimer = setTimeout(() => {
     if (!finished) {
@@ -65,7 +63,6 @@ module.exports = function handler(req, res) {
       const raw = Buffer.concat(chunks);
       chunks.length = 0;
 
-      // ── Parse multipart ──────────────────────────────────
       const delim     = Buffer.from('\r\n--' + boundary);
       const firstLine = Buffer.from('--' + boundary + '\r\n');
 
@@ -115,20 +112,19 @@ module.exports = function handler(req, res) {
       }
 
       // ── ناردن بۆ Telegram ────────────────────────────────
+      // image, font, apk → sendDocument (file_id stable, no compression)
+      // video → sendVideo
       const tgBoundary = '----TGBoundary' + Date.now();
-      const endpoint   = fileType === 'video' ? 'sendVideo'
-                       : fileType === 'image' ? 'sendPhoto'
-                       : 'sendDocument';
-      const fieldName  = fileType === 'video' ? 'video'
-                       : fileType === 'image' ? 'photo'
-                       : 'document';
+      const isVideo    = fileType === 'video';
+      const endpoint   = isVideo ? 'sendVideo' : 'sendDocument';
+      const fieldName  = isVideo ? 'video'     : 'document';
 
       let headerStr =
         '--' + tgBoundary + '\r\n' +
         'Content-Disposition: form-data; name="chat_id"\r\n\r\n' +
         CHANNEL_ID + '\r\n';
 
-      if (fileType === 'video') {
+      if (isVideo) {
         headerStr +=
           '--' + tgBoundary + '\r\n' +
           'Content-Disposition: form-data; name="supports_streaming"\r\n\r\ntrue\r\n';
@@ -155,7 +151,6 @@ module.exports = function handler(req, res) {
 
       const tgReq = https.request(tgOptions, tgRes => {
         let body = '';
-        // ── Timeout بۆ وەڵامی Telegram ───────────────────
         tgRes.setTimeout(40000, () => {
           tgRes.destroy();
           if (!finished) {
@@ -170,7 +165,6 @@ module.exports = function handler(req, res) {
           finished = true;
           clearTimeout(globalTimer);
           try {
-            // دڵنیابوون body تەواوە
             if (!body || body.trim() === '') {
               return res.status(502).json({ error: 'Empty response from Telegram' });
             }
@@ -178,18 +172,32 @@ module.exports = function handler(req, res) {
             if (!data.ok) {
               return res.status(500).json({ error: data.description || 'Telegram error' });
             }
-            const msg     = data.result;
-            const fileId  = fileType === 'video'  ? msg.video?.file_id
-                          : fileType === 'image'  ? (Array.isArray(msg.photo) ? msg.photo[msg.photo.length - 1]?.file_id : msg.photo?.file_id)
-                          : msg.document?.file_id;
-            const thumbId = fileType === 'video'
-              ? (msg.video?.thumbnail?.file_id || msg.video?.thumb?.file_id || '') : '';
+            const msg = data.result;
+
+            // file_id extraction based on type
+            let fileId  = '';
+            let thumbId = '';
+
+            if (isVideo) {
+              fileId  = (msg.video && msg.video.file_id) ? msg.video.file_id : '';
+              thumbId = msg.video && msg.video.thumbnail ? msg.video.thumbnail.file_id
+                      : msg.video && msg.video.thumb     ? msg.video.thumb.file_id
+                      : '';
+            } else {
+              // image, font, apk — all sent as document
+              fileId = (msg.document && msg.document.file_id) ? msg.document.file_id : '';
+            }
+
+            if (!fileId) {
+              return res.status(500).json({ error: 'No file_id in Telegram response: ' + JSON.stringify(msg).substring(0, 200) });
+            }
+
             return res.status(200).json({
               success: true, file_id: fileId, thumb_id: thumbId,
               type: fileType, message_id: msg.message_id,
             });
           } catch(e) {
-            try { res.status(500).json({ error: 'Parse TG response: ' + e.message + ' | body: ' + body.substring(0, 100) }); } catch(e2) {}
+            try { res.status(500).json({ error: 'Parse TG response: ' + e.message + ' | body: ' + body.substring(0, 200) }); } catch(e2) {}
           }
         });
         tgRes.on('error', e => {
@@ -201,7 +209,6 @@ module.exports = function handler(req, res) {
         });
       });
 
-      // ── Timeout بۆ connectکردن بۆ Telegram ───────────────
       tgReq.setTimeout(45000, () => {
         tgReq.destroy();
         if (!finished) {
