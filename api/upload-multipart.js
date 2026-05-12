@@ -1,4 +1,4 @@
-// api/upload-multipart.js — Fixed version with proper image handling
+// api/upload-multipart.js — Fixed, CommonJS, for storage-test-93ku.vercel.app
 
 module.exports.config = {
   api: { bodyParser: false, responseLimit: false },
@@ -26,13 +26,13 @@ module.exports = function handler(req, res) {
 
   const chunks = [];
   let totalSize = 0;
-  const MAX = 50 * 1024 * 1024;
+  const MAX = 50 * 1024 * 1024; // 50MB
 
   let finished = false;
   const globalTimer = setTimeout(() => {
     if (!finished) {
       finished = true;
-      try { res.status(504).json({ error: 'Upload timeout - try a smaller file' }); } catch(e) {}
+      try { res.status(504).json({ error: 'Upload timeout' }); } catch(e) {}
     }
   }, 55000);
 
@@ -43,7 +43,7 @@ module.exports = function handler(req, res) {
       if (!finished) {
         finished = true;
         clearTimeout(globalTimer);
-        return res.status(413).json({ error: 'File too large (max 50MB on free plan)' });
+        return res.status(413).json({ error: 'File too large (max 50MB)' });
       }
       return;
     }
@@ -73,9 +73,8 @@ module.exports = function handler(req, res) {
 
       let pos = indexOf(raw, firstLine, 0);
       if (pos === -1) {
-        clearTimeout(globalTimer);
-        finished = true;
-        return res.status(400).json({ error: 'Bad multipart' });
+        clearTimeout(globalTimer); finished = true;
+        return res.status(400).json({ error: 'Bad multipart format' });
       }
       pos += firstLine.length;
 
@@ -106,19 +105,17 @@ module.exports = function handler(req, res) {
       }
 
       if (!fileBuffer || fileBuffer.length === 0) {
-        clearTimeout(globalTimer);
-        finished = true;
+        clearTimeout(globalTimer); finished = true;
         return res.status(400).json({ error: 'No file data parsed' });
       }
 
-      // ── ناردن بۆ Telegram ────────────────────────────────
-      // image, font, apk → sendDocument (file_id stable, no compression)
-      // video → sendVideo
-      const tgBoundary = '----TGBoundary' + Date.now();
+      // ── ناردن بۆ Telegram ─────────────────────────────
       const isVideo    = fileType === 'video';
-      const endpoint   = isVideo ? 'sendVideo' : 'sendDocument';
-      const fieldName  = isVideo ? 'video'     : 'document';
+      const endpoint   = isVideo ? 'sendVideo'  : 'sendDocument';
+      const fieldName  = isVideo ? 'video'       : 'document';
+      const tgBoundary = '----TGBoundary' + Date.now();
 
+      // FIXED: هەر field جیاوازە — chat_id، supports_streaming (بۆ ڤیدیۆ تەنیا)، فایل
       let headerStr =
         '--' + tgBoundary + '\r\n' +
         'Content-Disposition: form-data; name="chat_id"\r\n\r\n' +
@@ -173,38 +170,33 @@ module.exports = function handler(req, res) {
               return res.status(500).json({ error: data.description || 'Telegram error' });
             }
             const msg = data.result;
-
-            // file_id extraction based on type
             let fileId  = '';
             let thumbId = '';
-
             if (isVideo) {
               fileId  = (msg.video && msg.video.file_id) ? msg.video.file_id : '';
               thumbId = msg.video && msg.video.thumbnail ? msg.video.thumbnail.file_id
-                      : msg.video && msg.video.thumb     ? msg.video.thumb.file_id
-                      : '';
+                      : msg.video && msg.video.thumb     ? msg.video.thumb.file_id : '';
             } else {
-              // image, font, apk — all sent as document
               fileId = (msg.document && msg.document.file_id) ? msg.document.file_id : '';
             }
-
             if (!fileId) {
-              return res.status(500).json({ error: 'No file_id in Telegram response: ' + JSON.stringify(msg).substring(0, 200) });
+              return res.status(500).json({
+                error: 'No file_id from Telegram: ' + JSON.stringify(msg).substring(0, 200)
+              });
             }
-
             return res.status(200).json({
               success: true, file_id: fileId, thumb_id: thumbId,
               type: fileType, message_id: msg.message_id,
             });
           } catch(e) {
-            try { res.status(500).json({ error: 'Parse TG response: ' + e.message + ' | body: ' + body.substring(0, 200) }); } catch(e2) {}
+            try { res.status(500).json({ error: 'Parse error: ' + e.message }); } catch(e2) {}
           }
         });
         tgRes.on('error', e => {
           if (!finished) {
             finished = true;
             clearTimeout(globalTimer);
-            try { res.status(500).json({ error: 'TG response error: ' + e.message }); } catch(e2) {}
+            try { res.status(500).json({ error: 'TG error: ' + e.message }); } catch(e2) {}
           }
         });
       });
