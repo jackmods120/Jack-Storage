@@ -1,4 +1,4 @@
-// api/upload-multipart.js — Fixed, CommonJS, for storage-test-93ku.vercel.app
+// api/upload-multipart.js — jack-storage.vercel.app — Fixed
 
 module.exports.config = {
   api: { bodyParser: false, responseLimit: false },
@@ -26,7 +26,7 @@ module.exports = function handler(req, res) {
 
   const chunks = [];
   let totalSize = 0;
-  const MAX = 50 * 1024 * 1024; // 50MB
+  const MAX = 50 * 1024 * 1024;
 
   let finished = false;
   const globalTimer = setTimeout(() => {
@@ -115,7 +115,7 @@ module.exports = function handler(req, res) {
       const fieldName  = isVideo ? 'video'       : 'document';
       const tgBoundary = '----TGBoundary' + Date.now();
 
-      // FIXED: هەر field جیاوازە — chat_id، supports_streaming (بۆ ڤیدیۆ تەنیا)، فایل
+      // ✅ FIXED: هەر field جیاکراوەتەوە بە ڕێگای درووست
       let headerStr =
         '--' + tgBoundary + '\r\n' +
         'Content-Disposition: form-data; name="chat_id"\r\n\r\n' +
@@ -181,7 +181,7 @@ module.exports = function handler(req, res) {
             }
             if (!fileId) {
               return res.status(500).json({
-                error: 'No file_id from Telegram: ' + JSON.stringify(msg).substring(0, 200)
+                error: 'No file_id: ' + JSON.stringify(msg).substring(0, 200)
               });
             }
             return res.status(200).json({
