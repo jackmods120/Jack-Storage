@@ -14,7 +14,7 @@ module.exports = async function handler(req, res) {
     if (!postId || !userId) return res.status(400).json({ error: 'postId and userId required' });
 
     const likeRef  = `${DB_URL}/likes/${postId}/${userId}.json`;
-    const likesRef = `${DB_URL}/posts/${postId}/likes.json`;
+    const likesRef = `${DB_URL}/posts/${req.query.category || "codes"}/${postId}/likes.json`;
 
     const currentRes = await fetch(likesRef);
     const current    = await currentRes.json();

@@ -50,9 +50,9 @@ module.exports = async function handler(req, res) {
       const fbData = await fbRes.json();
 
       // نوێکردنەوەی ژمارەی کۆمێنتەکان لە پۆستەکە
-      const countRes = await fetch(`${DB_URL}/posts/${postId}/comments.json`);
+      const countRes = await fetch(`${DB_URL}/posts/${req.query.category || "codes"}/${postId}/comments.json`);
       const count    = await countRes.json();
-      await fetch(`${DB_URL}/posts/${postId}/comments.json`, {
+      await fetch(`${DB_URL}/posts/${req.query.category || "codes"}/${postId}/comments.json`, {
         method : 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body   : JSON.stringify((count || 0) + 1),

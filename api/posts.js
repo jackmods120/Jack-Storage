@@ -1,22 +1,5 @@
 // api/posts.js — Firebase RTDB (native fetch, Node 24)
 
-module.exports.config = {
-  api: { bodyParser: true },
-};
-
-// Helper: parse body manually if req.body is not populated
-async function getBody(req) {
-  if (req.body && typeof req.body === 'object') return req.body;
-  return new Promise((resolve, reject) => {
-    let data = '';
-    req.on('data', chunk => data += chunk);
-    req.on('end', () => {
-      try { resolve(JSON.parse(data)); } catch(e) { resolve({}); }
-    });
-    req.on('error', reject);
-  });
-}
-
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -27,7 +10,8 @@ module.exports = async function handler(req, res) {
 
   try {
     if (req.method === 'GET') {
-      const fbRes  = await fetch(`${DB_URL}/posts.json`);
+      const category = req.query.category || 'codes';
+      const fbRes  = await fetch(`${DB_URL}/posts/${category}.json`);
       const fbData = await fbRes.json();
 
       if (!fbData) return res.status(200).json({ success: true, posts: [] });
@@ -41,11 +25,13 @@ module.exports = async function handler(req, res) {
     }
 
     if (req.method === 'POST') {
-      const { text, fileId, thumbId, mediaType, userId, username, userAvatar } = await getBody(req);
+      const { text, fileId, thumbId, mediaType, userId, username, userAvatar, category } = req.body;
 
       if (!text && !fileId) {
         return res.status(400).json({ error: 'Post must have text or media' });
       }
+
+      const cat = category || 'codes';
 
       const post = {
         text      : text       || '',
@@ -55,12 +41,13 @@ module.exports = async function handler(req, res) {
         userId    : userId     || 'anon',
         username  : username   || 'User',
         userAvatar: userAvatar || '',
+        category  : cat,
         timestamp : Date.now(),
         likes     : 0,
         comments  : 0,
       };
 
-      const fbRes  = await fetch(`${DB_URL}/posts.json`, {
+      const fbRes  = await fetch(`${DB_URL}/posts/${cat}.json`, {
         method : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body   : JSON.stringify(post),
