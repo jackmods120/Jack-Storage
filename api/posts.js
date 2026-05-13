@@ -1,5 +1,22 @@
 // api/posts.js — Firebase RTDB (native fetch, Node 24)
 
+module.exports.config = {
+  api: { bodyParser: true },
+};
+
+// Helper: parse body manually if req.body is not populated
+async function getBody(req) {
+  if (req.body && typeof req.body === 'object') return req.body;
+  return new Promise((resolve, reject) => {
+    let data = '';
+    req.on('data', chunk => data += chunk);
+    req.on('end', () => {
+      try { resolve(JSON.parse(data)); } catch(e) { resolve({}); }
+    });
+    req.on('error', reject);
+  });
+}
+
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -24,7 +41,7 @@ module.exports = async function handler(req, res) {
     }
 
     if (req.method === 'POST') {
-      const { text, fileId, thumbId, mediaType, userId, username, userAvatar } = req.body;
+      const { text, fileId, thumbId, mediaType, userId, username, userAvatar } = await getBody(req);
 
       if (!text && !fileId) {
         return res.status(400).json({ error: 'Post must have text or media' });
