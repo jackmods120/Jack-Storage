@@ -35,10 +35,11 @@ module.exports = async function handler(req, res) {
       }
 
       const comment = {
-        text     : text,
-        userId   : userId   || 'anon',
-        username : username || 'User',
-        timestamp: Date.now(),
+        text      : text,
+        userId    : userId    || 'anon',
+        username  : username  || 'User',
+        userAvatar: userAvatar || '',
+        timestamp : Date.now(),
       };
 
       // زیادکردنی کۆمێنت
