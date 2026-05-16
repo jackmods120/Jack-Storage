@@ -28,7 +28,7 @@ module.exports = async function handler(req, res) {
 
     // ════ POST — ناردنی کۆمێنتی نوێ ════════════════════════
     if (req.method === 'POST') {
-      const { postId, text, userId, username, userAvatar } = req.body;
+      const { postId, text, userId, username, userAvatar, category } = req.body;
 
       if (!postId || !text) {
         return res.status(400).json({ error: 'postId and text required' });
@@ -50,10 +50,13 @@ module.exports = async function handler(req, res) {
       });
       const fbData = await fbRes.json();
 
-      // نوێکردنەوەی ژمارەی کۆمێنتەکان لە پۆستەکە
-      const countRes = await fetch(`${DB_URL}/posts/${postId}/comments.json`);
+      // نوێکردنەوەی ژمارەی کۆمێنتەکان لە پۆستەکە (بە category)
+      const cats = ['codes','apps','fonts','effects','tutorial'];
+      const cat  = cats.includes(category) ? category : 'codes';
+      const countRef = `${DB_URL}/posts/${cat}/${postId}/comments.json`;
+      const countRes = await fetch(countRef);
       const count    = await countRes.json();
-      await fetch(`${DB_URL}/posts/${postId}/comments.json`, {
+      await fetch(countRef, {
         method : 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body   : JSON.stringify((count || 0) + 1),
