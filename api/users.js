@@ -19,6 +19,16 @@ module.exports = async function handler(req, res) {
     }
 
     // ════ POST — زیادکردنی بەکارهێنەر ════
+    // ── GET single user by email for login ──
+    if (req.method === 'GET' && req.query.email) {
+      const email = req.query.email.toLowerCase();
+      const key   = email.replace(/[.#$[\]]/g, '_');
+      const r     = await fetch(`${DB_URL}/users/${key}.json`);
+      const u     = await r.json();
+      if (!u) return res.status(404).json({ error: 'not found' });
+      return res.status(200).json({ success: true, user: { ...u, id: key } });
+    }
+
     if (req.method === 'POST') {
       const { email, name, role } = req.body;
       if (!email) return res.status(400).json({ error: 'email required' });
