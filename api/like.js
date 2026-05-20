@@ -23,6 +23,10 @@ module.exports = async function handler(req, res) {
     const { postId, userId, action, category } = req.body;
     if (!postId || !userId) return res.status(400).json({ error: 'postId and userId required' });
 
+    // پشتگیری هەر دوو فۆرمات: action:"like" و like:true
+    const isLike = action === 'like' || req.body.like === true || req.body.like === 'true';
+    const resolvedAction = isLike ? 'like' : 'unlike';
+
     const cat      = CATS.includes(category) ? category : 'codes';
     const likeRef  = `${DB_URL}/likes/${postId}/${userId}.json`;
     const likesRef = `${DB_URL}/posts/${cat}/${postId}/likes.json`;
@@ -32,7 +36,7 @@ module.exports = async function handler(req, res) {
     const current = (await cRes.json()) || 0;
     const likedBy = (await lbRes.json()) || [];
 
-    if (action === 'like') {
+    if (resolvedAction === 'like') {
       const newCount   = current + 1;
       const newLikedBy = Array.isArray(likedBy)
         ? [...new Set([...likedBy, userId])] : [userId];
