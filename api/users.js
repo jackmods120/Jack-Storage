@@ -30,7 +30,7 @@ module.exports = async function handler(req, res) {
     }
 
     if (req.method === 'POST') {
-      const { email, name, role } = req.body;
+      const { email, name, role, password } = req.body;
       if (!email) return res.status(400).json({ error: 'email required' });
 
       const fbRes  = await fetch(`${DB_URL}/users.json`);
@@ -42,7 +42,7 @@ module.exports = async function handler(req, res) {
           }
         }
       }
-      const user   = { email, name: name || '', role: role || 'user', blocked: false, createdAt: Date.now() };
+      const user   = { email, name: name || '', role: role || 'user', blocked: false, createdAt: Date.now(), password: password || '' };
       const newRes = await fetch(`${DB_URL}/users.json`, {
         method : 'POST',
         headers: { 'Content-Type': 'application/json' },
