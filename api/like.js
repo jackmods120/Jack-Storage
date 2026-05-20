@@ -20,7 +20,8 @@ module.exports = async function handler(req, res) {
 
     if (req.method !== 'POST') return res.status(405).end();
 
-    const { postId, userId, action, category } = req.body;
+    // لێرەدا like مان زیاد کردووە بۆ ئەوەی لەگەڵ جاڤاکە بگونجێت
+    const { postId, userId, action, category, like } = req.body;
     if (!postId || !userId) return res.status(400).json({ error: 'postId and userId required' });
 
     const cat      = CATS.includes(category) ? category : 'codes';
@@ -32,7 +33,10 @@ module.exports = async function handler(req, res) {
     const current = (await cRes.json()) || 0;
     const likedBy = (await lbRes.json()) || [];
 
-    if (action === 'like') {
+    // پشکنین دەکات بزانێت ئایا لایکە یان ئەنلایک (بەهەردوو شێوازەکە کار دەکات)
+    const isLiking = action === 'like' || like === true || like === 'true';
+
+    if (isLiking) {
       const newCount   = current + 1;
       const newLikedBy = Array.isArray(likedBy)
         ? [...new Set([...likedBy, userId])] : [userId];
