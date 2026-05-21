@@ -1,4 +1,4 @@
-// api/users.js — بەڕێوەبردنی بەکارهێنەران
+// api/users.js — بەڕێوەبردنی بەکارهێنەران (Firebase Auth version)
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -11,7 +11,16 @@ module.exports = async function handler(req, res) {
   try {
     // ════ GET ════
     if (req.method === 'GET') {
-      // ── GET single user by email: /api/users?email=xxx ──
+
+      // GET /api/users?uid=xxx — وەرگرتنی بەکارهێنەرێکی دیاریکراو بە uid
+      if (req.query.uid) {
+        const r = await fetch(`${DB_URL}/users/${req.query.uid}.json`);
+        const u = await r.json();
+        if (!u) return res.status(404).json({ error: 'not found' });
+        return res.status(200).json({ success: true, user: { ...u, id: req.query.uid } });
+      }
+
+      // GET /api/users?email=xxx — وەرگرتنی بەکارهێنەرێکی دیاریکراو بە ئیمێڵ
       if (req.query.email) {
         const email = req.query.email.toLowerCase();
         const fbRes  = await fetch(`${DB_URL}/users.json`);
@@ -25,7 +34,7 @@ module.exports = async function handler(req, res) {
         return res.status(404).json({ error: 'not found' });
       }
 
-      // ── GET all users ──
+      // GET /api/users — هەموو بەکارهێنەران
       const fbRes  = await fetch(`${DB_URL}/users.json`);
       const fbData = await fbRes.json();
       if (!fbData) return res.status(200).json({ success: true, users: [] });
@@ -33,65 +42,61 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ success: true, users });
     }
 
-    // ════ POST — زیادکردنی بەکارهێنەر ════
+    // ════ POST — زیادکردنی پرۆفایلی بەکارهێنەر (پاش Firebase Auth) ════
+    // body: { uid, email, name, role? }
     if (req.method === 'POST') {
-      const { email, name, role, password } = req.body;
-      if (!email) return res.status(400).json({ error: 'email required' });
+      const { uid, email, name, role } = req.body;
+      if (!uid || !email) return res.status(400).json({ error: 'uid and email required' });
 
-      const fbRes  = await fetch(`${DB_URL}/users.json`);
-      const fbData = await fbRes.json();
-      if (fbData) {
-        for (const [key, value] of Object.entries(fbData)) {
-          if (value.email === email) {
-            return res.status(200).json({ success: true, message: 'exists', id: key });
-          }
-        }
+      // ئەگەر پێشتر هەبوو، دوایین داتاکە بگەڕێنەوە
+      const existing = await fetch(`${DB_URL}/users/${uid}.json`);
+      const exData   = await existing.json();
+      if (exData) {
+        return res.status(200).json({ success: true, message: 'exists', id: uid, user: exData });
       }
-      const user   = { email, name: name || '', role: role || 'user', blocked: false, createdAt: Date.now(), password: password || '' };
-      const newRes = await fetch(`${DB_URL}/users.json`, {
-        method : 'POST',
+
+      // دروستکردنی پرۆفایلی نوێ — بەبێ پاسوۆرد
+      const user = {
+        email,
+        name    : name  || '',
+        role    : role  || 'user',
+        blocked : false,
+        createdAt: Date.now(),
+      };
+      await fetch(`${DB_URL}/users/${uid}.json`, {
+        method : 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body   : JSON.stringify(user),
       });
-      const newData = await newRes.json();
-      return res.status(200).json({ success: true, id: newData.name, user });
+      return res.status(200).json({ success: true, id: uid, user });
     }
 
-    // ════ PUT — گۆڕینی ڕۆڵ یان بلۆک ════
+    // ════ PUT — نوێکردنەوەی پرۆفایل (ناو، ئاواتار، ڕۆڵ، بلۆک) ════
+    // body: { uid, name?, avatar?, role?, blocked? }
     if (req.method === 'PUT') {
-      const { email, userId, role, blocked } = req.body;
-      if (!email && !userId) {
-        return res.status(400).json({ error: 'userId or email required' });
-      }
-      if (role === undefined && blocked === undefined) {
-        return res.status(400).json({ error: 'role or blocked required' });
-      }
+      const { uid, email, role, blocked, name, avatar } = req.body;
+      if (!uid && !email) return res.status(400).json({ error: 'uid or email required' });
 
-      const fbRes  = await fetch(`${DB_URL}/users.json`);
-      const fbData = await fbRes.json();
-      if (!fbData) return res.status(404).json({ error: 'User not found' });
+      let targetKey = uid;
 
-      let targetKey   = null;
-      let targetValue = null;
-
-      if (userId && fbData[userId]) {
-        targetKey   = userId;
-        targetValue = fbData[userId];
-      } else if (email) {
+      // ئەگەر uid نەبوو، بدۆزەوە بە ئیمێڵ
+      if (!targetKey && email) {
+        const fbRes  = await fetch(`${DB_URL}/users.json`);
+        const fbData = await fbRes.json();
+        if (!fbData) return res.status(404).json({ error: 'User not found' });
         for (const [key, value] of Object.entries(fbData)) {
-          if (value.email === email) {
-            targetKey   = key;
-            targetValue = value;
-            break;
-          }
+          if (value.email === email) { targetKey = key; break; }
         }
+        if (!targetKey) return res.status(404).json({ error: 'User not found' });
       }
 
-      if (!targetKey || !targetValue) {
-        return res.status(404).json({ error: 'User not found' });
-      }
+      const r  = await fetch(`${DB_URL}/users/${targetKey}.json`);
+      const u  = await r.json();
+      if (!u) return res.status(404).json({ error: 'User not found' });
 
-      const updated = { ...targetValue };
+      const updated = { ...u };
+      if (name    !== undefined) updated.name    = name;
+      if (avatar  !== undefined) updated.avatar  = avatar;
       if (role    !== undefined) updated.role    = role;
       if (blocked !== undefined) updated.blocked = blocked;
 
@@ -105,11 +110,11 @@ module.exports = async function handler(req, res) {
 
     // ════ DELETE ════
     if (req.method === 'DELETE') {
-      const { email, userId } = req.body;
-      if (!email && !userId) return res.status(400).json({ error: 'userId or email required' });
+      const { uid, email } = req.body;
+      if (!uid && !email) return res.status(400).json({ error: 'uid or email required' });
 
-      if (userId) {
-        await fetch(`${DB_URL}/users/${userId}.json`, { method: 'DELETE' });
+      if (uid) {
+        await fetch(`${DB_URL}/users/${uid}.json`, { method: 'DELETE' });
         return res.status(200).json({ success: true });
       }
 
