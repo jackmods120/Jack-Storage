@@ -9,8 +9,23 @@ module.exports = async function handler(req, res) {
     || 'https://alight-motion-helper-default-rtdb.firebaseio.com';
 
   try {
-    // ════ GET — لیستی بەکارهێنەران ════
+    // ════ GET ════
     if (req.method === 'GET') {
+      // ── GET single user by email: /api/users?email=xxx ──
+      if (req.query.email) {
+        const email = req.query.email.toLowerCase();
+        const fbRes  = await fetch(`${DB_URL}/users.json`);
+        const fbData = await fbRes.json();
+        if (!fbData) return res.status(404).json({ error: 'not found' });
+        for (const [key, value] of Object.entries(fbData)) {
+          if (value.email === email) {
+            return res.status(200).json({ success: true, user: { ...value, id: key } });
+          }
+        }
+        return res.status(404).json({ error: 'not found' });
+      }
+
+      // ── GET all users ──
       const fbRes  = await fetch(`${DB_URL}/users.json`);
       const fbData = await fbRes.json();
       if (!fbData) return res.status(200).json({ success: true, users: [] });
@@ -19,16 +34,6 @@ module.exports = async function handler(req, res) {
     }
 
     // ════ POST — زیادکردنی بەکارهێنەر ════
-    // ── GET single user by email for login ──
-    if (req.method === 'GET' && req.query.email) {
-      const email = req.query.email.toLowerCase();
-      const key   = email.replace(/[.#$[\]]/g, '_');
-      const r     = await fetch(`${DB_URL}/users/${key}.json`);
-      const u     = await r.json();
-      if (!u) return res.status(404).json({ error: 'not found' });
-      return res.status(200).json({ success: true, user: { ...u, id: key } });
-    }
-
     if (req.method === 'POST') {
       const { email, name, role, password } = req.body;
       if (!email) return res.status(400).json({ error: 'email required' });
@@ -53,7 +58,6 @@ module.exports = async function handler(req, res) {
     }
 
     // ════ PUT — گۆڕینی ڕۆڵ یان بلۆک ════
-    // body: { userId?, email?, role?, blocked? }
     if (req.method === 'PUT') {
       const { email, userId, role, blocked } = req.body;
       if (!email && !userId) {
@@ -71,7 +75,6 @@ module.exports = async function handler(req, res) {
       let targetValue = null;
 
       if (userId && fbData[userId]) {
-        // ✅ پشتگیری userId (Firebase key)
         targetKey   = userId;
         targetValue = fbData[userId];
       } else if (email) {
