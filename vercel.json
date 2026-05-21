@@ -7,6 +7,7 @@
     "api/posts.js":            { "maxDuration": 10  },
     "api/like.js":             { "maxDuration": 10  },
     "api/users.js":            { "maxDuration": 10  },
-    "api/comments.js":         { "maxDuration": 10  }
+    "api/comments.js":         { "maxDuration": 10  },
+    "api/view.js":             { "maxDuration": 10  }
   }
 }
