@@ -38,7 +38,31 @@ module.exports = async function handler(req, res) {
         body: JSON.stringify(post),
       });
       const fbData = await fbRes.json();
-      return res.status(200).json({ success: true, id: fbData.name, post });
+      const postId  = fbData.name;
+
+      // ── ناردنی notification بۆ هەموو بەکارهێنەران ──────
+      const postTitle = (username || 'بەکارهێنەرێک') + ' پۆستی نوێی کردووە 🔔';
+      const postBody  = text ? (text.length > 80 ? text.slice(0, 80) + '...' : text)
+                             : (mediaType === 'image' ? '🖼️ وێنەی نوێ' : '🎬 ڤیدیۆی نوێ');
+      try {
+        await fetch(`${process.env.VERCEL_URL
+          ? 'https://' + process.env.VERCEL_URL
+          : 'https://jack-storage.vercel.app'}/api/notify`, {
+          method : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body   : JSON.stringify({
+            title         : postTitle,
+            body          : postBody,
+            poster        : userAvatar || '',
+            excludeUserId : userId || '',
+          }),
+        });
+      } catch (notifyErr) {
+        console.error('Notify failed:', notifyErr.message);
+        // notification شکستی هێنا بەڵام پۆستەکە بە جوانی ذەخیرەکرا
+      }
+
+      return res.status(200).json({ success: true, id: postId, post });
     }
 
     // ════ PATCH — گۆڕینی ناو/وێنە لە هەموو پۆستەکان ════
