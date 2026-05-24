@@ -1,4 +1,4 @@
-// api/comments.js — کۆمێنتەکان (native fetch, Node 24)
+// api/comments.js — کۆمێنت + ڕیپلە (TikTok style)
 
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -9,7 +9,7 @@ module.exports = async function handler(req, res) {
   const DB_URL = process.env.FIREBASE_DB_URL || 'https://jack-9a034-default-rtdb.firebaseio.com';
 
   try {
-    // ════ GET — وەرگرتنی کۆمێنتەکانی پۆستێک ═══════════════
+    // ════ GET ════════════════════════════════════════════════
     if (req.method === 'GET') {
       const postId = req.query.postId;
       if (!postId) return res.status(400).json({ error: 'postId required' });
@@ -26,23 +26,25 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ success: true, comments });
     }
 
-    // ════ POST — ناردنی کۆمێنتی نوێ ════════════════════════
+    // ════ POST ═══════════════════════════════════════════════
     if (req.method === 'POST') {
-      const { postId, text, userId, username, userAvatar, category } = req.body;
+      const { postId, text, userId, username, userAvatar, category,
+              replyTo, replyToUser } = req.body;
 
-      if (!postId || !text) {
+      if (!postId || !text)
         return res.status(400).json({ error: 'postId and text required' });
-      }
 
       const comment = {
         text      : text,
-        userId    : userId    || 'anon',
-        username  : username  || 'User',
+        userId    : userId     || 'anon',
+        username  : username   || 'User',
         userAvatar: userAvatar || '',
         timestamp : Date.now(),
+        // ── ڕیپلە ──────────────────────────────────────────
+        replyTo    : replyTo     || '',   // id کۆمێنتی دایک
+        replyToUser: replyToUser || '',   // ناوی ئەو بەکارهێنەر
       };
 
-      // زیادکردنی کۆمێنت
       const fbRes  = await fetch(`${DB_URL}/comments/${postId}.json`, {
         method : 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -50,17 +52,19 @@ module.exports = async function handler(req, res) {
       });
       const fbData = await fbRes.json();
 
-      // نوێکردنەوەی ژمارەی کۆمێنتەکان لە پۆستەکە (بە category)
-      const cats = ['codes','apps','fonts','effects','tutorial'];
-      const cat  = cats.includes(category) ? category : 'codes';
-      const countRef = `${DB_URL}/posts/${cat}/${postId}/comments.json`;
-      const countRes = await fetch(countRef);
-      const count    = await countRes.json();
-      await fetch(countRef, {
-        method : 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body   : JSON.stringify((count || 0) + 1),
-      });
+      // نوێکردنەوەی ژمارەی کۆمێنت — تەنیا کۆمێنتی دایک (نە ڕیپلە)
+      if (!replyTo) {
+        const cats     = ['codes','apps','fonts','effects','tutorial'];
+        const cat      = cats.includes(category) ? category : 'codes';
+        const countRef = `${DB_URL}/posts/${cat}/${postId}/comments.json`;
+        const countRes = await fetch(countRef);
+        const count    = await countRes.json();
+        await fetch(countRef, {
+          method : 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body   : JSON.stringify((count || 0) + 1),
+        });
+      }
 
       return res.status(200).json({ success: true, id: fbData.name, comment });
     }
