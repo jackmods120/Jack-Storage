@@ -92,10 +92,37 @@ module.exports = async function handler(req, res) {
     }
 
     // ════ DELETE ════
+    // دوو شێوە پشتگیری دەکات:
+    // ١. DELETE /api/posts  + body: { postId, category }
+    // ٢. DELETE /api/posts/codes/123  (URL path — بەرنامەی ئێستا)
     if (req.method === 'DELETE') {
-      const { postId, category } = req.body;
-      if (!postId || !category) return res.status(400).json({ error: 'postId and category required' });
+      // وەرگرتنی postId و category لە URL path یان body
+      let postId  = req.body?.postId   || '';
+      let category= req.body?.category || '';
+
+      // بدۆزەوە لە URL path: /api/posts/codes/abc123
+      const urlParts = (req.url || '').split('/').filter(Boolean);
+      // urlParts: ['api','posts','codes','abc123']
+      if (!postId && urlParts.length >= 4) {
+        category = urlParts[urlParts.length - 2] || category;
+        postId   = urlParts[urlParts.length - 1] || postId;
+      }
+      // یان query string: ?postId=...&category=...
+      if (!postId && req.query?.postId)   postId   = req.query.postId;
+      if (!category && req.query?.category) category = req.query.category;
+
+      if (!postId || !category)
+        return res.status(400).json({ error: 'postId and category required' });
+      if (!CATS.includes(category))
+        return res.status(400).json({ error: 'Invalid category' });
+
       await fetch(`${DB_URL}/posts/${category}/${postId}.json`, { method: 'DELETE' });
+
+      // سڕینەوەی کۆمێنتەکانیشی
+      try {
+        await fetch(`${DB_URL}/comments/${postId}.json`, { method: 'DELETE' });
+      } catch (_) {}
+
       return res.status(200).json({ success: true });
     }
 
