@@ -1,13 +1,13 @@
 {
-  "version": 2,
-  "functions": {
-    "api/upload.js":           { "maxDuration": 60,  "memory": 1024 },
-    "api/upload-multipart.js": { "maxDuration": 300, "memory": 1024 },
-    "api/media.js":            { "maxDuration": 30,  "memory": 512  },
-    "api/posts.js":            { "maxDuration": 10  },
-    "api/like.js":             { "maxDuration": 10  },
-    "api/users.js":            { "maxDuration": 10  },
-    "api/comments.js":         { "maxDuration": 10  },
-    "api/view.js":             { "maxDuration": 10  }
-  }
+  "rewrites": [
+    { "source": "/api/posts",       "destination": "/api/posts.js"       },
+    { "source": "/api/comments",    "destination": "/api/comments.js"    },
+    { "source": "/api/users",       "destination": "/api/users.js"       },
+    { "source": "/api/like",        "destination": "/api/like.js"        },
+    { "source": "/api/media",       "destination": "/api/media.js"       },
+    { "source": "/api/upload",      "destination": "/api/upload.js"      },
+    { "source": "/api/view",        "destination": "/api/view.js"        },
+    { "source": "/api/fcm-token",   "destination": "/api/fcm-token.js"   },
+    { "source": "/api/notify",      "destination": "/api/notify.js"      }
+  ]
 }
