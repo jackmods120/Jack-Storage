@@ -1,8 +1,11 @@
 {
   "name": "jack-posts-api",
   "version": "4.0.0",
-  "engines": { "node": "24.x" },
+  "engines": {
+    "node": "24.x"
+  },
   "dependencies": {
-    "busboy": "^1.6.0"
+    "busboy": "^1.6.0",
+    "google-auth-library": "^9.0.0"
   }
 }
