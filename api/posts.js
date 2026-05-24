@@ -96,20 +96,20 @@ module.exports = async function handler(req, res) {
     // ١. DELETE /api/posts  + body: { postId, category }
     // ٢. DELETE /api/posts/codes/123  (URL path — بەرنامەی ئێستا)
     if (req.method === 'DELETE') {
-      // وەرگرتنی postId و category لە URL path یان body
-      let postId  = req.body?.postId   || '';
-      let category= req.body?.category || '';
+      // Vercel path params: /api/posts/:cat/:id  →  req.query.cat, req.query.id
+      // یان body: { postId, category }
+      let postId   = req.body?.postId   || req.query?.id  || req.query?.postId   || '';
+      let category = req.body?.category || req.query?.cat || req.query?.category || '';
 
-      // بدۆزەوە لە URL path: /api/posts/codes/abc123
-      const urlParts = (req.url || '').split('/').filter(Boolean);
-      // urlParts: ['api','posts','codes','abc123']
-      if (!postId && urlParts.length >= 4) {
-        category = urlParts[urlParts.length - 2] || category;
-        postId   = urlParts[urlParts.length - 1] || postId;
+      // پاشەکەوت: URL path دەستی بکار
+      if (!postId || !category) {
+        const parts = (req.url || '').split('?')[0].split('/').filter(Boolean);
+        // ['api','posts','codes','abc123']
+        if (parts.length >= 4) {
+          if (!category) category = parts[parts.length - 2];
+          if (!postId)   postId   = parts[parts.length - 1];
+        }
       }
-      // یان query string: ?postId=...&category=...
-      if (!postId && req.query?.postId)   postId   = req.query.postId;
-      if (!category && req.query?.category) category = req.query.category;
 
       if (!postId || !category)
         return res.status(400).json({ error: 'postId and category required' });
