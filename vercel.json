@@ -1,13 +1,14 @@
 {
   "rewrites": [
-    { "source": "/api/posts",       "destination": "/api/posts.js"       },
-    { "source": "/api/comments",    "destination": "/api/comments.js"    },
-    { "source": "/api/users",       "destination": "/api/users.js"       },
-    { "source": "/api/like",        "destination": "/api/like.js"        },
-    { "source": "/api/media",       "destination": "/api/media.js"       },
-    { "source": "/api/upload",      "destination": "/api/upload.js"      },
-    { "source": "/api/view",        "destination": "/api/view.js"        },
-    { "source": "/api/fcm-token",   "destination": "/api/fcm-token.js"   },
-    { "source": "/api/notify",      "destination": "/api/notify.js"      }
+    { "source": "/api/posts/:cat/:id", "destination": "/api/posts.js" },
+    { "source": "/api/posts",          "destination": "/api/posts.js" },
+    { "source": "/api/comments",       "destination": "/api/comments.js" },
+    { "source": "/api/users",          "destination": "/api/users.js" },
+    { "source": "/api/like",           "destination": "/api/like.js" },
+    { "source": "/api/media",          "destination": "/api/media.js" },
+    { "source": "/api/upload",         "destination": "/api/upload.js" },
+    { "source": "/api/view",           "destination": "/api/view.js" },
+    { "source": "/api/fcm-token",      "destination": "/api/fcm-token.js" },
+    { "source": "/api/notify",         "destination": "/api/notify.js" }
   ]
 }
