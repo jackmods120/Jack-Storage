@@ -6,7 +6,7 @@ module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  const DB_URL = process.env.FIREBASE_DB_URL || 'https://jack-9a034-default-rtdb.firebaseio.com';
+  const DB_URL = process.env.FIREBASE_DB_URL || 'https://alight-helper-default-rtdb.firebaseio.com';
 
   try {
     // ════ POST — ذەخیرەکردنی token ════════════════════════
