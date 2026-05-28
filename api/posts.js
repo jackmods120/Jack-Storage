@@ -24,13 +24,13 @@ module.exports = async function handler(req, res) {
 
     // ════ POST ════
     if (req.method === 'POST') {
-      const { text, fileId, thumbId, mediaType, userId, username, userAvatar, category } = req.body;
+      const { text, fileId, thumbId, mediaType, userId, username, userAvatar, category, role } = req.body;
       if (!text && !fileId) return res.status(400).json({ error: 'Post must have text or media' });
       const cat  = CATS.includes(category) ? category : 'codes';
       const post = {
         text, fileId: fileId||'', thumbId: thumbId||'',
         mediaType: mediaType||'none', userId: userId||'anon',
-        username: username||'User', userAvatar: userAvatar||'',
+        username: username||'User', userAvatar: userAvatar||'', role: role||'user',
         category: cat, timestamp: Date.now(), likes: 0, comments: 0,
       };
       const fbRes  = await fetch(`${DB_URL}/posts/${cat}.json`, {
