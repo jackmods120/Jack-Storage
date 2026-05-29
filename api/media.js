@@ -1,10 +1,9 @@
-// api/media.js — Telegram File Proxy (native fetch, Node 24)
-
+// api/media.js — Telegram File Proxy + info endpoint
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  const { id, redirect } = req.query;
+  const { id, redirect, info } = req.query;
   if (!id) return res.status(400).json({ error: 'file_id required' });
 
   const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -18,11 +17,18 @@ module.exports = async function handler(req, res) {
     const filePath = infoData.result.file_path;
     const fileUrl  = `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`;
 
+    // ── info=1 → URL ی ڕاستەوخۆ بگەڕێنەوە (بۆ DownloadManager) ──
+    if (info === '1') {
+      return res.status(200).json({ ok: true, url: fileUrl, file_path: filePath });
+    }
+
+    // ── redirect=1 → ڕاستەوخۆ بەرەو Telegram ──────────────────────
     if (redirect === '1') {
       res.setHeader('Cache-Control', 'public, max-age=3600');
       return res.redirect(302, fileUrl);
     }
 
+    // ── proxy mode (بۆ فایلی بچووک) ──────────────────────────────────
     const fileRes = await fetch(fileUrl);
     if (!fileRes.ok) return res.status(502).json({ error: 'Fetch failed' });
 
