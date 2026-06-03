@@ -1,4 +1,5 @@
 // api/comments.js — کۆمێنت + ڕیپلە (TikTok style)
+// دەستکاریکرا: زیادکردنی ئاگادارکردنەوەی ئۆتۆماتیک بۆ ڕیپلە و کۆمێنت
 
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -6,7 +7,10 @@ module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  const DB_URL = process.env.FIREBASE_DB_URL || 'https://jack-9a034-default-rtdb.firebaseio.com';
+  const DB_URL  = process.env.FIREBASE_DB_URL || 'https://jack-9a034-default-rtdb.firebaseio.com';
+  const API_URL = process.env.VERCEL_URL
+    ? `https://${process.env.VERCEL_URL}`
+    : 'https://jack-storage.vercel.app';
 
   try {
     // ════ GET ════════════════════════════════════════════════
@@ -28,8 +32,13 @@ module.exports = async function handler(req, res) {
 
     // ════ POST ═══════════════════════════════════════════════
     if (req.method === 'POST') {
-      const { postId, text, userId, username, userAvatar, category,
-              replyTo, replyToUser } = req.body;
+      const {
+        postId, text, userId, username, userAvatar, category,
+        replyTo, replyToUser,
+        // ── زیادکرا: بۆ ئاگادارکردنەوە ──
+        replyToUserId,  // ID ی ئەو کەسەی ڕیپلەی کرا (لە CommentActivity دەنێرێت)
+        postOwnerId,    // ID ی خاوەنی پۆستەکە — ئەگەر نەنێرا خۆی لە Firebase دەردەکات
+      } = req.body;
 
       if (!postId || !text)
         return res.status(400).json({ error: 'postId and text required' });
@@ -40,9 +49,8 @@ module.exports = async function handler(req, res) {
         username  : username   || 'User',
         userAvatar: userAvatar || '',
         timestamp : Date.now(),
-        // ── ڕیپلە ──────────────────────────────────────────
-        replyTo    : replyTo     || '',   // id کۆمێنتی دایک
-        replyToUser: replyToUser || '',   // ناوی ئەو بەکارهێنەر
+        replyTo    : replyTo     || '',
+        replyToUser: replyToUser || '',
       };
 
       const fbRes  = await fetch(`${DB_URL}/comments/${postId}.json`, {
@@ -52,7 +60,8 @@ module.exports = async function handler(req, res) {
       });
       const fbData = await fbRes.json();
 
-      // نوێکردنەوەی ژمارەی کۆمێنت — تەنیا کۆمێنتی دایک (نە ڕیپلە)
+      // نوێکردنەوەی ژمارەی کۆمێنت — تەنیا کۆمێنتی دایک
+      let resolvedOwner = postOwnerId || '';
       if (!replyTo) {
         const cats     = ['codes','apps','fonts','effects','tutorial'];
         const cat      = cats.includes(category) ? category : 'codes';
@@ -64,7 +73,28 @@ module.exports = async function handler(req, res) {
           headers: { 'Content-Type': 'application/json' },
           body   : JSON.stringify((count || 0) + 1),
         });
+
+        // ئەگەر owner نەنێرا — لە Firebase پۆستەکە بدۆزینەوە
+        if (!resolvedOwner) {
+          try {
+            const postRes  = await fetch(`${DB_URL}/posts/${cat}/${postId}/userId.json`);
+            const postData = await postRes.json();
+            if (postData && typeof postData === 'string') resolvedOwner = postData;
+          } catch (_) {}
+        }
       }
+
+      // ════ ئاگادارکردنەوە ════════════════════════════════
+      sendNotificationAsync({
+        apiUrl        : API_URL,
+        senderUserId  : userId || '',
+        senderUsername: username || 'User',
+        replyTo,
+        replyToUser,
+        replyToUserId,
+        postOwnerId   : resolvedOwner,
+      });
+      // ══════════════════════════════════════════════════════
 
       return res.status(200).json({ success: true, id: fbData.name, comment });
     }
@@ -76,3 +106,45 @@ module.exports = async function handler(req, res) {
     return res.status(500).json({ error: err.message });
   }
 };
+
+// ══════════════════════════════════════════════════════
+//  ناردنی ئاگادارکردنەوە (هیچ دواخستنێک ناکات)
+// ══════════════════════════════════════════════════════
+async function sendNotificationAsync({
+  apiUrl, senderUserId, senderUsername,
+  replyTo, replyToUser, replyToUserId,
+  postOwnerId,
+}) {
+  try {
+    // ── ڕیپلە کرا ──────────────────────────────────────
+    if (replyTo && replyToUserId && replyToUserId !== senderUserId) {
+      await fetch(`${apiUrl}/api/notify`, {
+        method : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body   : JSON.stringify({
+          type        : 'reply',
+          targetUserId: replyToUserId,
+          title       : `${senderUsername} ڕیپلەیت کرد 💬`,
+          body        : `${senderUsername} وەڵامی کۆمێنتەکەت دایەوە`,
+          poster      : '',
+        }),
+      });
+    }
+    // ── کۆمێنتی سادە (نە ڕیپلە) ──────────────────────
+    else if (!replyTo && postOwnerId && postOwnerId !== senderUserId) {
+      await fetch(`${apiUrl}/api/notify`, {
+        method : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body   : JSON.stringify({
+          type        : 'comment',
+          targetUserId: postOwnerId,
+          title       : `${senderUsername} کۆمێنتی کرد 💬`,
+          body        : `${senderUsername} کۆمێنتی لە پۆستەکەت کرد`,
+          poster      : '',
+        }),
+      });
+    }
+  } catch (e) {
+    console.error('Notification send error:', e);
+  }
+}
