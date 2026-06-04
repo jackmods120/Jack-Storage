@@ -36,29 +36,55 @@ module.exports = async function handler(req, res) {
     //  ١. ڕاستەوخۆ ذەخیرە بکە بۆ Firebase DB
     //     بێ ئەوەی منتظری FCM token بێت
     // ══════════════════════════════════════════════════════
+    const timestamp = Date.now();
+    const notifRecord = {
+      type      : notifType,
+      title     : title       || '',
+      body      : body        || '',
+      category  : category,
+      postId    : postId,
+      commentId : commentId,
+      fromName  : fromName,
+      fromAvatar: fromAvatar,
+      timestamp : timestamp,
+      read      : false,
+    };
+
     if (targetUserId && targetUserId !== excludeUserId) {
+      // ── ئاگادارکردنەوەی کۆمێنت: بۆ تەنیا یەک بەکارهێنەر ──
       try {
-        const timestamp = Date.now();
-        const notifKey  = `${timestamp}_${Math.random().toString(36).slice(2, 8)}`;
-        const notifRecord = {
-          type      : notifType,
-          title     : title       || '',
-          body      : body        || '',
-          category  : category,
-          postId    : postId,
-          commentId : commentId,
-          fromName  : fromName,
-          fromAvatar: fromAvatar,
-          timestamp : timestamp,
-          read      : false,
-        };
+        const notifKey = `${timestamp}_${Math.random().toString(36).slice(2, 8)}`;
         await fetch(`${DB_URL}/notifications/${targetUserId}/${notifKey}.json`, {
           method : 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body   : JSON.stringify(notifRecord),
         });
       } catch (dbErr) {
-        console.error('DB save error:', dbErr);
+        console.error('DB save error (single):', dbErr);
+      }
+    } else if (!targetUserId && (notifType === 'new_post' || notifType === 'admin_post')) {
+      // ── ئاگادارکردنەوەی پۆستی نوێ: بۆ هەموو بەکارهێنەران (broadcast) ──
+      // ناوی ئەدمین/خاوەنی بەرنامە لە fromName دێت — بۆ هەموو ذەخیرە دەکرێت
+      try {
+        const usersRes  = await fetch(`${DB_URL}/users.json`);
+        const usersData = await usersRes.json();
+        if (usersData && typeof usersData === 'object') {
+          const savePromises = [];
+          for (const uid of Object.keys(usersData)) {
+            if (excludeUserId && uid === excludeUserId) continue;
+            const notifKey = `${timestamp}_${Math.random().toString(36).slice(2, 8)}`;
+            savePromises.push(
+              fetch(`${DB_URL}/notifications/${uid}/${notifKey}.json`, {
+                method : 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body   : JSON.stringify({ ...notifRecord }),
+              }).catch(e => console.error('DB broadcast save error for', uid, e))
+            );
+          }
+          await Promise.all(savePromises);
+        }
+      } catch (dbErr) {
+        console.error('DB broadcast save error:', dbErr);
       }
     }
 

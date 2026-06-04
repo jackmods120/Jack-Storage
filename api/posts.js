@@ -55,6 +55,11 @@ module.exports = async function handler(req, res) {
             body          : postBody,
             poster        : userAvatar || '',
             excludeUserId : userId || '',
+            type          : 'new_post',
+            category      : cat,
+            postId        : postId,
+            fromName      : username || '',
+            fromAvatar    : userAvatar || '',
           }),
         });
       } catch (notifyErr) {
