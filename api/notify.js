@@ -1,5 +1,4 @@
 // api/notify.js — FCM V1 API + Service Account
-// دەستکاریکرا: زیادکردنی ئاگادارکردنەوەی ڕیپلە و کۆمێنت
 
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -12,6 +11,7 @@ module.exports = async function handler(req, res) {
   const PROJECT   = 'alight-helper';
   const FCM_URL   = `https://fcm.googleapis.com/v1/projects/${PROJECT}/messages:send`;
 
+  // Service Account لە environment variable یان خۆی
   const SA_JSON = process.env.FCM_SERVICE_ACCOUNT_KEY
     ? JSON.parse(process.env.FCM_SERVICE_ACCOUNT_KEY)
     : {
@@ -25,17 +25,9 @@ module.exports = async function handler(req, res) {
       };
 
   try {
-    const {
-      title, body, poster,
-      excludeUserId,
-      // ── ئاگادارکردنەوەی ڕیپلە / کۆمێنت ──────────────
-      // type: "reply"  → ناردن تەنیا بۆ targetUserId
-      // type: "comment"→ ناردن تەنیا بۆ postOwnerId
-      // type: "post"   → ناردن بۆ هەمووان (هەمیشەی پێشوو)
-      type,          // "reply" | "comment" | "post"
-      targetUserId,  // ID ی ئەو کەسەی ئاگادارکردنەوە دەچێت بۆ
-    } = req.body;
+    const { title, body, poster, excludeUserId, targetUserId } = req.body;
 
+    // ── Access Token وەرگرتن ──────────────────────────────
     const accessToken = await getAccessToken(SA_JSON);
 
     // ── FCM Tokenەکان لە Firebase DB ─────────────────────
@@ -44,23 +36,13 @@ module.exports = async function handler(req, res) {
     if (!fbData) return res.status(200).json({ success: true, sent: 0 });
 
     const tokens = [];
-
-    // ── ئەگەر ڕیپلە یان کۆمێنت بوو → تەنیا بۆ targetUserId ──
-    if ((type === 'reply' || type === 'comment') && targetUserId) {
-      const userTokens = fbData[targetUserId];
-      if (userTokens && typeof userTokens === 'object') {
+    for (const [userId, userTokens] of Object.entries(fbData)) {
+      if (excludeUserId && userId === excludeUserId) continue;
+      // ئەگەر targetUserId هەبوو — تەنیا ئەو بەکارهێنەرە
+      if (targetUserId && userId !== targetUserId) continue;
+      if (typeof userTokens === 'object') {
         for (const [, val] of Object.entries(userTokens)) {
-          if (val && val.token) tokens.push({ userId: targetUserId, token: val.token });
-        }
-      }
-    } else {
-      // ── پۆستی نوێ → بۆ هەمووان ──
-      for (const [userId, userTokens] of Object.entries(fbData)) {
-        if (excludeUserId && userId === excludeUserId) continue;
-        if (typeof userTokens === 'object') {
-          for (const [, val] of Object.entries(userTokens)) {
-            if (val && val.token) tokens.push({ userId, token: val.token });
-          }
+          if (val && val.token) tokens.push({ userId, token: val.token });
         }
       }
     }
@@ -68,13 +50,7 @@ module.exports = async function handler(req, res) {
     if (tokens.length === 0)
       return res.status(200).json({ success: true, sent: 0 });
 
-    // ── channel_id بە جۆری ئاگادارکردنەوە دیاریبکە ──────
-    const channelId = (type === 'reply')
-      ? 'alight_helper_replies'
-      : (type === 'comment')
-        ? 'alight_helper_comments'
-        : 'alight_helper_posts';
-
+    // ── ناردن بۆ هەموو tokenەکان ─────────────────────────
     let sent = 0, failed = 0;
     for (const { token } of tokens) {
       try {
@@ -87,20 +63,24 @@ module.exports = async function handler(req, res) {
           body: JSON.stringify({
             message: {
               token,
-              notification: { title: title || 'ئاگادارکردنەوە 🔔', body: body || '' },
+              notification: { title: title || 'پۆستی نوێ 🔔', body: body || '' },
               data: {
-                title       : title        || '',
-                body        : body         || '',
-                poster      : poster       || '',
-                type        : type         || 'post',
-                targetUserId: targetUserId || '',
+                title    : title              || '',
+                body     : body               || '',
+                poster   : poster             || '',
+                type     : req.body.type      || 'new_post',
+                category : req.body.category  || '',
+                postId   : req.body.postId    || '',
+                commentId: req.body.commentId || '',
+                fromName : req.body.fromName  || '',
+                fromAvatar: req.body.fromAvatar|| '',
               },
               android: {
                 priority: 'high',
                 notification: {
-                  channel_id           : channelId,
-                  sound                : 'default',
-                  default_sound        : true,
+                  channel_id: 'alight_helper_posts',
+                  sound: 'default',
+                  default_sound: true,
                   default_vibrate_timings: true,
                 }
               }
@@ -110,7 +90,7 @@ module.exports = async function handler(req, res) {
         if (r.ok) { sent++; }
         else {
           failed++;
-          const err = await r.json().catch(() => ({}));
+          const err = await r.json().catch(()=>({}));
           console.error('FCM error:', JSON.stringify(err));
         }
       } catch (e) { failed++; }
@@ -142,6 +122,7 @@ async function getAccessToken(sa) {
   const b64 = obj => Buffer.from(JSON.stringify(obj)).toString('base64url');
   const unsigned = `${b64(header)}.${b64(claim)}`;
 
+  // ── RSA-SHA256 署名 ───────────────────────────────────
   const crypto  = require('crypto');
   const sign    = crypto.createSign('RSA-SHA256');
   sign.update(unsigned);
@@ -149,6 +130,7 @@ async function getAccessToken(sa) {
   const signature = sign.sign(sa.private_key, 'base64url');
   const jwt = `${unsigned}.${signature}`;
 
+  // ── Token وەرگرتن ─────────────────────────────────────
   const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
     method : 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
