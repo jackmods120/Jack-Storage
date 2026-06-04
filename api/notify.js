@@ -1,4 +1,4 @@
-// api/notify.js — FCM V1 API + Service Account
+// api/notify.js — FCM V1 API + Service Account + Firebase DB Save
 
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -26,6 +26,12 @@ module.exports = async function handler(req, res) {
 
   try {
     const { title, body, poster, excludeUserId, targetUserId } = req.body;
+    const notifType   = req.body.type       || 'new_post';
+    const category    = req.body.category   || '';
+    const postId      = req.body.postId     || '';
+    const commentId   = req.body.commentId  || '';
+    const fromName    = req.body.fromName   || '';
+    const fromAvatar  = req.body.fromAvatar || '';
 
     // ── Access Token وەرگرتن ──────────────────────────────
     const accessToken = await getAccessToken(SA_JSON);
@@ -35,20 +41,58 @@ module.exports = async function handler(req, res) {
     const fbData = await fbRes.json();
     if (!fbData) return res.status(200).json({ success: true, sent: 0 });
 
+    // ── کۆکردنەوەی userId یەکانی پێویست ────────────────────
+    const targetUserIds = new Set();
     const tokens = [];
+
     for (const [userId, userTokens] of Object.entries(fbData)) {
       if (excludeUserId && userId === excludeUserId) continue;
-      // ئەگەر targetUserId هەبوو — تەنیا ئەو بەکارهێنەرە
       if (targetUserId && userId !== targetUserId) continue;
       if (typeof userTokens === 'object') {
         for (const [, val] of Object.entries(userTokens)) {
-          if (val && val.token) tokens.push({ userId, token: val.token });
+          if (val && val.token) {
+            tokens.push({ userId, token: val.token });
+            targetUserIds.add(userId);
+          }
         }
       }
     }
 
     if (tokens.length === 0)
       return res.status(200).json({ success: true, sent: 0 });
+
+    // ══════════════════════════════════════════════════════
+    //  ذەخیرەکردنی ئاگادارکردنەوە بۆ Firebase Realtime DB
+    //  بۆ هەر userId ی پێویست
+    // ══════════════════════════════════════════════════════
+    const timestamp = Date.now();
+    const notifRecord = {
+      type       : notifType,
+      title      : title      || '',
+      body       : body       || '',
+      category   : category,
+      postId     : postId,
+      commentId  : commentId,
+      fromName   : fromName,
+      fromAvatar : fromAvatar,
+      timestamp  : timestamp,
+      read       : false,
+    };
+
+    // هەر userId تەنیا یەک جار تۆمار دەکرێت
+    for (const uid of targetUserIds) {
+      try {
+        // کلیلی یەکتا: timestamp + random
+        const notifKey = `${timestamp}_${Math.random().toString(36).slice(2, 8)}`;
+        await fetch(`${DB_URL}/notifications/${uid}/${notifKey}.json`, {
+          method : 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body   : JSON.stringify(notifRecord),
+        });
+      } catch (dbErr) {
+        console.error('DB save error for uid', uid, dbErr);
+      }
+    }
 
     // ── ناردن بۆ هەموو tokenەکان ─────────────────────────
     let sent = 0, failed = 0;
@@ -65,15 +109,15 @@ module.exports = async function handler(req, res) {
               token,
               notification: { title: title || 'پۆستی نوێ 🔔', body: body || '' },
               data: {
-                title    : title              || '',
-                body     : body               || '',
-                poster   : poster             || '',
-                type     : req.body.type      || 'new_post',
-                category : req.body.category  || '',
-                postId   : req.body.postId    || '',
-                commentId: req.body.commentId || '',
-                fromName : req.body.fromName  || '',
-                fromAvatar: req.body.fromAvatar|| '',
+                title     : title       || '',
+                body      : body        || '',
+                poster    : poster      || '',
+                type      : notifType,
+                category  : category,
+                postId    : postId,
+                commentId : commentId,
+                fromName  : fromName,
+                fromAvatar: fromAvatar,
               },
               android: {
                 priority: 'high',
