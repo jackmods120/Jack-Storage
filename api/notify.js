@@ -7,11 +7,10 @@ module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST')    return res.status(405).json({ error: 'POST only' });
 
-  const DB_URL    = process.env.FIREBASE_DB_URL || 'https://alight-helper-default-rtdb.firebaseio.com';
-  const PROJECT   = 'alight-helper';
-  const FCM_URL   = `https://fcm.googleapis.com/v1/projects/${PROJECT}/messages:send`;
+  const DB_URL  = process.env.FIREBASE_DB_URL || 'https://alight-helper-default-rtdb.firebaseio.com';
+  const PROJECT = 'alight-helper';
+  const FCM_URL = `https://fcm.googleapis.com/v1/projects/${PROJECT}/messages:send`;
 
-  // Service Account لە environment variable یان خۆی
   const SA_JSON = process.env.FCM_SERVICE_ACCOUNT_KEY
     ? JSON.parse(process.env.FCM_SERVICE_ACCOUNT_KEY)
     : {
@@ -33,68 +32,59 @@ module.exports = async function handler(req, res) {
     const fromName    = req.body.fromName   || '';
     const fromAvatar  = req.body.fromAvatar || '';
 
-    // ── Access Token وەرگرتن ──────────────────────────────
-    const accessToken = await getAccessToken(SA_JSON);
-
-    // ── FCM Tokenەکان لە Firebase DB ─────────────────────
-    const fbRes  = await fetch(`${DB_URL}/fcm_tokens.json`);
-    const fbData = await fbRes.json();
-    if (!fbData) return res.status(200).json({ success: true, sent: 0 });
-
-    // ── کۆکردنەوەی userId یەکانی پێویست ────────────────────
-    const targetUserIds = new Set();
-    const tokens = [];
-
-    for (const [userId, userTokens] of Object.entries(fbData)) {
-      if (excludeUserId && userId === excludeUserId) continue;
-      if (targetUserId && userId !== targetUserId) continue;
-      if (typeof userTokens === 'object') {
-        for (const [, val] of Object.entries(userTokens)) {
-          if (val && val.token) {
-            tokens.push({ userId, token: val.token });
-            targetUserIds.add(userId);
-          }
-        }
-      }
-    }
-
-    if (tokens.length === 0)
-      return res.status(200).json({ success: true, sent: 0 });
-
     // ══════════════════════════════════════════════════════
-    //  ذەخیرەکردنی ئاگادارکردنەوە بۆ Firebase Realtime DB
-    //  بۆ هەر userId ی پێویست
+    //  ١. ڕاستەوخۆ ذەخیرە بکە بۆ Firebase DB
+    //     بێ ئەوەی منتظری FCM token بێت
     // ══════════════════════════════════════════════════════
-    const timestamp = Date.now();
-    const notifRecord = {
-      type       : notifType,
-      title      : title      || '',
-      body       : body       || '',
-      category   : category,
-      postId     : postId,
-      commentId  : commentId,
-      fromName   : fromName,
-      fromAvatar : fromAvatar,
-      timestamp  : timestamp,
-      read       : false,
-    };
-
-    // هەر userId تەنیا یەک جار تۆمار دەکرێت
-    for (const uid of targetUserIds) {
+    if (targetUserId && targetUserId !== excludeUserId) {
       try {
-        // کلیلی یەکتا: timestamp + random
-        const notifKey = `${timestamp}_${Math.random().toString(36).slice(2, 8)}`;
-        await fetch(`${DB_URL}/notifications/${uid}/${notifKey}.json`, {
+        const timestamp = Date.now();
+        const notifKey  = `${timestamp}_${Math.random().toString(36).slice(2, 8)}`;
+        const notifRecord = {
+          type      : notifType,
+          title     : title       || '',
+          body      : body        || '',
+          category  : category,
+          postId    : postId,
+          commentId : commentId,
+          fromName  : fromName,
+          fromAvatar: fromAvatar,
+          timestamp : timestamp,
+          read      : false,
+        };
+        await fetch(`${DB_URL}/notifications/${targetUserId}/${notifKey}.json`, {
           method : 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body   : JSON.stringify(notifRecord),
         });
       } catch (dbErr) {
-        console.error('DB save error for uid', uid, dbErr);
+        console.error('DB save error:', dbErr);
       }
     }
 
-    // ── ناردن بۆ هەموو tokenەکان ─────────────────────────
+    // ══════════════════════════════════════════════════════
+    //  ٢. FCM Push Notification بنێرە
+    // ══════════════════════════════════════════════════════
+    const accessToken = await getAccessToken(SA_JSON);
+
+    const fbRes  = await fetch(`${DB_URL}/fcm_tokens.json`);
+    const fbData = await fbRes.json();
+    if (!fbData) return res.status(200).json({ success: true, sent: 0, db: 'saved' });
+
+    const tokens = [];
+    for (const [userId, userTokens] of Object.entries(fbData)) {
+      if (excludeUserId && userId === excludeUserId) continue;
+      if (targetUserId  && userId !== targetUserId)  continue;
+      if (typeof userTokens === 'object') {
+        for (const [, val] of Object.entries(userTokens)) {
+          if (val && val.token) tokens.push({ userId, token: val.token });
+        }
+      }
+    }
+
+    if (tokens.length === 0)
+      return res.status(200).json({ success: true, sent: 0, db: 'saved' });
+
     let sent = 0, failed = 0;
     for (const { token } of tokens) {
       try {
@@ -109,9 +99,9 @@ module.exports = async function handler(req, res) {
               token,
               notification: { title: title || 'پۆستی نوێ 🔔', body: body || '' },
               data: {
-                title     : title       || '',
-                body      : body        || '',
-                poster    : poster      || '',
+                title     : title      || '',
+                body      : body       || '',
+                poster    : poster     || '',
                 type      : notifType,
                 category  : category,
                 postId    : postId,
@@ -122,9 +112,9 @@ module.exports = async function handler(req, res) {
               android: {
                 priority: 'high',
                 notification: {
-                  channel_id: 'alight_helper_posts',
-                  sound: 'default',
-                  default_sound: true,
+                  channel_id           : 'alight_helper_posts',
+                  sound                : 'default',
+                  default_sound        : true,
                   default_vibrate_timings: true,
                 }
               }
@@ -134,13 +124,13 @@ module.exports = async function handler(req, res) {
         if (r.ok) { sent++; }
         else {
           failed++;
-          const err = await r.json().catch(()=>({}));
+          const err = await r.json().catch(() => ({}));
           console.error('FCM error:', JSON.stringify(err));
         }
       } catch (e) { failed++; }
     }
 
-    return res.status(200).json({ success: true, sent, failed, total: tokens.length });
+    return res.status(200).json({ success: true, sent, failed, total: tokens.length, db: 'saved' });
 
   } catch (err) {
     console.error('Notify error:', err);
@@ -162,19 +152,15 @@ async function getAccessToken(sa) {
     exp  : now + 3600,
     scope: 'https://www.googleapis.com/auth/firebase.messaging',
   };
-
-  const b64 = obj => Buffer.from(JSON.stringify(obj)).toString('base64url');
+  const b64      = obj => Buffer.from(JSON.stringify(obj)).toString('base64url');
   const unsigned = `${b64(header)}.${b64(claim)}`;
-
-  // ── RSA-SHA256 署名 ───────────────────────────────────
-  const crypto  = require('crypto');
-  const sign    = crypto.createSign('RSA-SHA256');
+  const crypto   = require('crypto');
+  const sign     = crypto.createSign('RSA-SHA256');
   sign.update(unsigned);
   sign.end();
   const signature = sign.sign(sa.private_key, 'base64url');
   const jwt = `${unsigned}.${signature}`;
 
-  // ── Token وەرگرتن ─────────────────────────────────────
   const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
     method : 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
