@@ -7,9 +7,12 @@ module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST')    return res.status(405).json({ error: 'POST only' });
 
-  const DB_URL  = process.env.FIREBASE_DB_URL || 'https://alight-helper-default-rtdb.firebaseio.com';
-  const PROJECT = 'alight-helper';
-  const FCM_URL = `https://fcm.googleapis.com/v1/projects/${PROJECT}/messages:send`;
+  // NOTIF_DB: ئاگادارکردنەوەکان و FCM tokens لێرە ذەخیرە دەکرێن
+  const NOTIF_DB = process.env.FIREBASE_DB_URL      || 'https://alight-helper-default-rtdb.firebaseio.com';
+  // USERS_DB: لیستی بەکارهێنەران لێرە ذەخیرەن
+  const USERS_DB = process.env.FIREBASE_USERS_DB_URL || 'https://alight-motion-helper-default-rtdb.firebaseio.com';
+  const PROJECT  = 'alight-helper';
+  const FCM_URL  = `https://fcm.googleapis.com/v1/projects/${PROJECT}/messages:send`;
 
   const SA_JSON = process.env.FCM_SERVICE_ACCOUNT_KEY
     ? JSON.parse(process.env.FCM_SERVICE_ACCOUNT_KEY)
@@ -33,8 +36,7 @@ module.exports = async function handler(req, res) {
     const fromAvatar  = req.body.fromAvatar || '';
 
     // ══════════════════════════════════════════════════════
-    //  ١. ڕاستەوخۆ ذەخیرە بکە بۆ Firebase DB
-    //     بێ ئەوەی منتظری FCM token بێت
+    //  ١. ذەخیرەکردن لە NOTIF_DB
     // ══════════════════════════════════════════════════════
     const timestamp = Date.now();
     const notifRecord = {
@@ -54,7 +56,7 @@ module.exports = async function handler(req, res) {
       // ── ئاگادارکردنەوەی کۆمێنت: بۆ تەنیا یەک بەکارهێنەر ──
       try {
         const notifKey = `${timestamp}_${Math.random().toString(36).slice(2, 8)}`;
-        await fetch(`${DB_URL}/notifications/${targetUserId}/${notifKey}.json`, {
+        await fetch(`${NOTIF_DB}/notifications/${targetUserId}/${notifKey}.json`, {
           method : 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body   : JSON.stringify(notifRecord),
@@ -64,9 +66,9 @@ module.exports = async function handler(req, res) {
       }
     } else if (!targetUserId && (notifType === 'new_post' || notifType === 'admin_post')) {
       // ── ئاگادارکردنەوەی پۆستی نوێ: بۆ هەموو بەکارهێنەران (broadcast) ──
-      // ناوی ئەدمین/خاوەنی بەرنامە لە fromName دێت — بۆ هەموو ذەخیرە دەکرێت
+      // بەکارهێنەران لە USERS_DB دێن، ئاگادارکردنەوەکان لە NOTIF_DB ذەخیرە دەکرێن
       try {
-        const usersRes  = await fetch(`${DB_URL}/users.json`);
+        const usersRes  = await fetch(`${USERS_DB}/users.json`);
         const usersData = await usersRes.json();
         if (usersData && typeof usersData === 'object') {
           const savePromises = [];
@@ -74,7 +76,7 @@ module.exports = async function handler(req, res) {
             if (excludeUserId && uid === excludeUserId) continue;
             const notifKey = `${timestamp}_${Math.random().toString(36).slice(2, 8)}`;
             savePromises.push(
-              fetch(`${DB_URL}/notifications/${uid}/${notifKey}.json`, {
+              fetch(`${NOTIF_DB}/notifications/${uid}/${notifKey}.json`, {
                 method : 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body   : JSON.stringify({ ...notifRecord }),
@@ -89,11 +91,11 @@ module.exports = async function handler(req, res) {
     }
 
     // ══════════════════════════════════════════════════════
-    //  ٢. FCM Push Notification بنێرە
+    //  ٢. FCM Push Notification — FCM tokens لە NOTIF_DB
     // ══════════════════════════════════════════════════════
     const accessToken = await getAccessToken(SA_JSON);
 
-    const fbRes  = await fetch(`${DB_URL}/fcm_tokens.json`);
+    const fbRes  = await fetch(`${NOTIF_DB}/fcm_tokens.json`);
     const fbData = await fbRes.json();
     if (!fbData) return res.status(200).json({ success: true, sent: 0, db: 'saved' });
 
