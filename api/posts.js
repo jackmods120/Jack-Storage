@@ -45,9 +45,7 @@ module.exports = async function handler(req, res) {
       const postBody  = text ? (text.length > 80 ? text.slice(0, 80) + '...' : text)
                              : (mediaType === 'image' ? '🖼️ وێنەی نوێ' : '🎬 ڤیدیۆی نوێ');
       try {
-        await fetch(`${process.env.VERCEL_URL
-          ? 'https://' + process.env.VERCEL_URL
-          : 'https://jack-storage.vercel.app'}/api/notify`, {
+        await fetch('https://jack-storage.vercel.app/api/notify', {
           method : 'POST',
           headers: { 'Content-Type': 'application/json' },
           body   : JSON.stringify({
