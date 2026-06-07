@@ -89,6 +89,10 @@ module.exports = async function handler(req, res) {
         apiUrl        : API_URL,
         senderUserId  : userId || '',
         senderUsername: username || 'User',
+        senderAvatar  : userAvatar || '',
+        postId        : postId,
+        commentId     : fbData.name || '',
+        category      : category || 'codes',
         replyTo,
         replyToUser,
         replyToUserId,
@@ -111,7 +115,8 @@ module.exports = async function handler(req, res) {
 //  ناردنی ئاگادارکردنەوە (هیچ دواخستنێک ناکات)
 // ══════════════════════════════════════════════════════
 async function sendNotificationAsync({
-  apiUrl, senderUserId, senderUsername,
+  apiUrl, senderUserId, senderUsername, senderAvatar,
+  postId, commentId, category,
   replyTo, replyToUser, replyToUserId,
   postOwnerId,
 }) {
@@ -122,8 +127,13 @@ async function sendNotificationAsync({
         method : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body   : JSON.stringify({
-          type        : 'reply',
+          type        : 'new_comment',
           targetUserId: replyToUserId,
+          fromName    : senderUsername,
+          fromAvatar  : senderAvatar || '',
+          postId      : postId,
+          commentId   : commentId,
+          category    : category,
           title       : `${senderUsername} ڕیپلەیت کرد 💬`,
           body        : `${senderUsername} وەڵامی کۆمێنتەکەت دایەوە`,
           poster      : '',
@@ -136,8 +146,13 @@ async function sendNotificationAsync({
         method : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body   : JSON.stringify({
-          type        : 'comment',
+          type        : 'new_comment',
           targetUserId: postOwnerId,
+          fromName    : senderUsername,
+          fromAvatar  : senderAvatar || '',
+          postId      : postId,
+          commentId   : commentId,
+          category    : category,
           title       : `${senderUsername} کۆمێنتی کرد 💬`,
           body        : `${senderUsername} کۆمێنتی لە پۆستەکەت کرد`,
           poster      : '',
