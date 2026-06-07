@@ -3,7 +3,7 @@
 
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
@@ -101,6 +101,56 @@ module.exports = async function handler(req, res) {
       // ══════════════════════════════════════════════════════
 
       return res.status(200).json({ success: true, id: fbData.name, comment });
+    }
+
+    // ════ DELETE ══════════════════════════════════════════════
+    if (req.method === 'DELETE') {
+      const { postId, commentId, category, userId, replyTo } = req.query;
+      if (!postId || !commentId) return res.status(400).json({ error: 'postId and commentId required' });
+
+      const cats = ['codes','apps','fonts','effects','tutorial'];
+      const cat  = cats.includes(category) ? category : 'codes';
+
+      // بڕیاردان: ئایا خاوەنی کۆمێنتەکەیە؟
+      const cmtRes  = await fetch(`${DB_URL}/comments/${postId}/${commentId}.json`);
+      const cmtData = await cmtRes.json();
+      if (!cmtData) return res.status(404).json({ error: 'Comment not found' });
+
+      // بڕیاردان: خاوەنی کۆمێنت یان خاوەنی پۆست
+      let postOwner = '';
+      try {
+        const ownerRes = await fetch(`${DB_URL}/posts/${cat}/${postId}/userId.json`);
+        postOwner = await ownerRes.json() || '';
+      } catch (_) {}
+
+      if (cmtData.userId !== userId && postOwner !== userId) {
+        return res.status(403).json({ error: 'Not allowed' });
+      }
+
+      const isReply = replyTo && replyTo.length > 0;
+
+      if (isReply) {
+        // سڕینەوەی تەنیا ئەو ڕیپلەیە
+        await fetch(`${DB_URL}/comments/${postId}/${commentId}.json`, { method: 'DELETE' });
+      } else {
+        // سڕینەوەی کۆمێنتی دایک
+        await fetch(`${DB_URL}/comments/${postId}/${commentId}.json`, { method: 'DELETE' });
+        // سڕینەوەی هەموو ڕیپلەکانی
+        try {
+          const allRes  = await fetch(`${DB_URL}/comments/${postId}.json`);
+          const allData = await allRes.json();
+          if (allData) {
+            const delJobs = Object.entries(allData)
+              .filter(([, c]) => c.replyTo === commentId)
+              .map(([id]) =>
+                fetch(`${DB_URL}/comments/${postId}/${id}.json`, { method: 'DELETE' })
+              );
+            await Promise.all(delJobs);
+          }
+        } catch (_) {}
+      }
+
+      return res.status(200).json({ success: true });
     }
 
     return res.status(405).json({ error: 'Method not allowed' });
