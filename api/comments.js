@@ -150,6 +150,33 @@ module.exports = async function handler(req, res) {
         } catch (_) {}
       }
 
+      // ════ نوێکردنەوەی ژمارەی کۆمێنت ════
+      try {
+        const countRef = `${DB_URL}/posts/${cat}/${postId}/comments.json`;
+        const countRes = await fetch(countRef);
+        const curCount = await countRes.json();
+        let delta = 1; // کەمترین: خودی ئەو کۆمێنتە
+        if (!isReply) {
+          // ژمارەی ڕیپلەکانیش زیاد بکە
+          try {
+            const allRes2  = await fetch(`${DB_URL}/comments/${postId}.json`);
+            const allData2 = await allRes2.json();
+            if (allData2 && typeof allData2 === 'object') {
+              const replyCount = Object.values(allData2)
+                .filter(c => c.replyTo === commentId).length;
+              delta += replyCount;
+            }
+          } catch (_) {}
+        }
+        const next = Math.max(0, (curCount || 0) - delta);
+        await fetch(countRef, {
+          method : 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body   : JSON.stringify(next),
+        });
+      } catch (_) {}
+      // ══════════════════════════════════════════════════════
+
       // ════ سڕینەوەی ئاگادارکردنەوەکان بەپێی commentId ════
       try {
         // ئاگادارکردنەوەی خاوەنی پۆست بسڕەوە
