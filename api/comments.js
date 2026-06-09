@@ -116,7 +116,7 @@ module.exports = async function handler(req, res) {
       const cmtData = await cmtRes.json();
       if (!cmtData) return res.status(404).json({ error: 'Comment not found' });
 
-      // بڕیاردان: خاوەنی کۆمێنت یان خاوەنی پۆست
+      // خاوەنی پۆست
       let postOwner = '';
       try {
         const ownerRes = await fetch(`${DB_URL}/posts/${cat}/${postId}/userId.json`);
@@ -129,13 +129,25 @@ module.exports = async function handler(req, res) {
 
       const isReply = replyTo && replyTo.length > 0;
 
+      // ════ STEP 1: پێش سڕینەوە — ژمارەی delta حیساب بکە ════
+      let delta = 1;
+      if (!isReply) {
+        try {
+          const allResCount = await fetch(`${DB_URL}/comments/${postId}.json`);
+          const allDataCount = await allResCount.json();
+          if (allDataCount && typeof allDataCount === 'object') {
+            const replyCount = Object.values(allDataCount)
+              .filter(c => c.replyTo === commentId).length;
+            delta = 1 + replyCount;
+          }
+        } catch (_) {}
+      }
+
+      // ════ STEP 2: سڕینەوەی کۆمێنت و ڕیپلەکانی ════
       if (isReply) {
-        // سڕینەوەی تەنیا ئەو ڕیپلەیە
         await fetch(`${DB_URL}/comments/${postId}/${commentId}.json`, { method: 'DELETE' });
       } else {
-        // سڕینەوەی کۆمێنتی دایک
         await fetch(`${DB_URL}/comments/${postId}/${commentId}.json`, { method: 'DELETE' });
-        // سڕینەوەی هەموو ڕیپلەکانی
         try {
           const allRes  = await fetch(`${DB_URL}/comments/${postId}.json`);
           const allData = await allRes.json();
@@ -150,24 +162,11 @@ module.exports = async function handler(req, res) {
         } catch (_) {}
       }
 
-      // ════ نوێکردنەوەی ژمارەی کۆمێنت ════
+      // ════ STEP 3: نوێکردنەوەی ژمارەی کۆمێنت ════
       try {
         const countRef = `${DB_URL}/posts/${cat}/${postId}/comments.json`;
         const countRes = await fetch(countRef);
         const curCount = await countRes.json();
-        let delta = 1; // کەمترین: خودی ئەو کۆمێنتە
-        if (!isReply) {
-          // ژمارەی ڕیپلەکانیش زیاد بکە
-          try {
-            const allRes2  = await fetch(`${DB_URL}/comments/${postId}.json`);
-            const allData2 = await allRes2.json();
-            if (allData2 && typeof allData2 === 'object') {
-              const replyCount = Object.values(allData2)
-                .filter(c => c.replyTo === commentId).length;
-              delta += replyCount;
-            }
-          } catch (_) {}
-        }
         const next = Math.max(0, (curCount || 0) - delta);
         await fetch(countRef, {
           method : 'PUT',
@@ -175,11 +174,9 @@ module.exports = async function handler(req, res) {
           body   : JSON.stringify(next),
         });
       } catch (_) {}
-      // ══════════════════════════════════════════════════════
 
-      // ════ سڕینەوەی ئاگادارکردنەوەکان بەپێی commentId ════
+      // ════ STEP 4: سڕینەوەی ئاگادارکردنەوەکان بەپێی commentId ════
       try {
-        // ئاگادارکردنەوەی خاوەنی پۆست بسڕەوە
         if (postOwner) {
           const notifRes  = await fetch(`${DB_URL}/notifications/${postOwner}.json`);
           const notifData = await notifRes.json();
@@ -192,36 +189,26 @@ module.exports = async function handler(req, res) {
             await Promise.all(delJobs);
           }
         }
-        // ئاگادارکردنەوەی خاوەنی ڕیپلەکانیش بسڕەوە (کۆمێنتی دایک سڕا)
-        if (!isReply) {
-          try {
-            const usersRes  = await fetch(`${DB_URL}/users.json`);
-            const usersData = await usersRes.json();
-            if (usersData && typeof usersData === 'object') {
-              // ئاگادارکردنەوەکانی ڕیپلەکان بسڕە (replyTo === commentId)
-              const replyCommentIds = [];
-              try {
-                const allCmtRes  = await fetch(`${DB_URL}/comments/${postId}.json`);
-                const allCmtData = await allCmtRes.json();
-                // نەخێر — ئەوانە کەچی سڕان، لە cmtData ی پێش سڕین بدۆزینەوە
-              } catch (_) {}
-
-              for (const uid of Object.keys(usersData)) {
-                const uNotifRes  = await fetch(`${DB_URL}/notifications/${uid}.json`);
-                const uNotifData = await uNotifRes.json();
-                if (!uNotifData || typeof uNotifData !== 'object') continue;
-                const uDelJobs = Object.entries(uNotifData)
-                  .filter(([, n]) => n.postId === postId && n.commentId === commentId)
-                  .map(([key]) =>
-                    fetch(`${DB_URL}/notifications/${uid}/${key}.json`, { method: 'DELETE' })
-                  );
-                if (uDelJobs.length > 0) await Promise.all(uDelJobs);
-              }
+        // ئاگادارکردنەوەی هەموو بەکارهێنەران بسڕە (ڕیپلەکانیش)
+        try {
+          const usersRes  = await fetch(`${DB_URL}/users.json`);
+          const usersData = await usersRes.json();
+          if (usersData && typeof usersData === 'object') {
+            for (const uid of Object.keys(usersData)) {
+              if (uid === postOwner) continue; // کەچی سڕا
+              const uNotifRes  = await fetch(`${DB_URL}/notifications/${uid}.json`);
+              const uNotifData = await uNotifRes.json();
+              if (!uNotifData || typeof uNotifData !== 'object') continue;
+              const uDelJobs = Object.entries(uNotifData)
+                .filter(([, n]) => n.postId === postId && n.commentId === commentId)
+                .map(([key]) =>
+                  fetch(`${DB_URL}/notifications/${uid}/${key}.json`, { method: 'DELETE' })
+                );
+              if (uDelJobs.length > 0) await Promise.all(uDelJobs);
             }
-          } catch (_) {}
-        }
+          }
+        } catch (_) {}
       } catch (_) {}
-      // ══════════════════════════════════════════════════════
 
       return res.status(200).json({ success: true });
     }
