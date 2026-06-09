@@ -2,10 +2,44 @@
 
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();
-  if (req.method !== 'POST')    return res.status(405).json({ error: 'POST only' });
+
+  // ════ DELETE ═══════════════════════════════════════════════
+  // سڕینەوەی ئاگادارکردنەوەی پەیوەندیدار بە commentId یان postId
+  // ?targetUserId=xxx&postId=yyy&commentId=zzz  (commentId ئایەختیاریە)
+  if (req.method === 'DELETE') {
+    const DB = 'https://alight-motion-helper-default-rtdb.firebaseio.com';
+    const { targetUserId, postId, commentId } = req.query;
+    if (!targetUserId || !postId)
+      return res.status(400).json({ error: 'targetUserId and postId required' });
+
+    try {
+      // هەموو ئاگادارکردنەوەکانی ئەو بەکارهێنەرە بخوێنەوە
+      const fbRes  = await fetch(`${DB}/notifications/${targetUserId}.json`);
+      const fbData = await fbRes.json();
+      if (!fbData) return res.status(200).json({ success: true, deleted: 0 });
+
+      const delJobs = [];
+      for (const [key, n] of Object.entries(fbData)) {
+        const matchPost    = n.postId === postId;
+        const matchComment = !commentId || n.commentId === commentId;
+        if (matchPost && matchComment) {
+          delJobs.push(
+            fetch(`${DB}/notifications/${targetUserId}/${key}.json`, { method: 'DELETE' })
+              .catch(e => console.error('delete notif error:', e))
+          );
+        }
+      }
+      await Promise.all(delJobs);
+      return res.status(200).json({ success: true, deleted: delJobs.length });
+    } catch (err) {
+      return res.status(500).json({ error: err.message });
+    }
+  }
+
+  if (req.method !== 'POST') return res.status(405).json({ error: 'POST or DELETE only' });
 
   // هەردووکیان لە هەمان DB — alight-motion-helper
   const DB = 'https://alight-motion-helper-default-rtdb.firebaseio.com';
