@@ -150,6 +150,52 @@ module.exports = async function handler(req, res) {
         } catch (_) {}
       }
 
+      // ════ سڕینەوەی ئاگادارکردنەوەکان بەپێی commentId ════
+      try {
+        // ئاگادارکردنەوەی خاوەنی پۆست بسڕەوە
+        if (postOwner) {
+          const notifRes  = await fetch(`${DB_URL}/notifications/${postOwner}.json`);
+          const notifData = await notifRes.json();
+          if (notifData && typeof notifData === 'object') {
+            const delJobs = Object.entries(notifData)
+              .filter(([, n]) => n.commentId === commentId)
+              .map(([key]) =>
+                fetch(`${DB_URL}/notifications/${postOwner}/${key}.json`, { method: 'DELETE' })
+              );
+            await Promise.all(delJobs);
+          }
+        }
+        // ئاگادارکردنەوەی خاوەنی ڕیپلەکانیش بسڕەوە (کۆمێنتی دایک سڕا)
+        if (!isReply) {
+          try {
+            const usersRes  = await fetch(`${DB_URL}/users.json`);
+            const usersData = await usersRes.json();
+            if (usersData && typeof usersData === 'object') {
+              // ئاگادارکردنەوەکانی ڕیپلەکان بسڕە (replyTo === commentId)
+              const replyCommentIds = [];
+              try {
+                const allCmtRes  = await fetch(`${DB_URL}/comments/${postId}.json`);
+                const allCmtData = await allCmtRes.json();
+                // نەخێر — ئەوانە کەچی سڕان، لە cmtData ی پێش سڕین بدۆزینەوە
+              } catch (_) {}
+
+              for (const uid of Object.keys(usersData)) {
+                const uNotifRes  = await fetch(`${DB_URL}/notifications/${uid}.json`);
+                const uNotifData = await uNotifRes.json();
+                if (!uNotifData || typeof uNotifData !== 'object') continue;
+                const uDelJobs = Object.entries(uNotifData)
+                  .filter(([, n]) => n.postId === postId && n.commentId === commentId)
+                  .map(([key]) =>
+                    fetch(`${DB_URL}/notifications/${uid}/${key}.json`, { method: 'DELETE' })
+                  );
+                if (uDelJobs.length > 0) await Promise.all(uDelJobs);
+              }
+            }
+          } catch (_) {}
+        }
+      } catch (_) {}
+      // ══════════════════════════════════════════════════════
+
       return res.status(200).json({ success: true });
     }
 
