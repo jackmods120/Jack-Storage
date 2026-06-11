@@ -132,23 +132,9 @@ module.exports = async function handler(req, res) {
       if (isReply) {
         // سڕینەوەی تەنیا ئەو ڕیپلەیە
         await fetch(`${DB_URL}/comments/${postId}/${commentId}.json`, { method: 'DELETE' });
-        // سڕینەوەی ئاگادارکردنەوەی ئەو ڕیپلەیە (بۆ خاوەنی کۆمێنتی ئەصلی)
-        if (cmtData.replyTo) {
-          try {
-            const parentRes  = await fetch(`${DB_URL}/comments/${postId}/${cmtData.replyTo}.json`);
-            const parentData = await parentRes.json();
-            if (parentData && parentData.userId) {
-              await fetch(`${API_URL}/api/notify?targetUserId=${parentData.userId}&postId=${postId}&commentId=${commentId}`, { method: 'DELETE' });
-            }
-          } catch (_) {}
-        }
       } else {
         // سڕینەوەی کۆمێنتی دایک
         await fetch(`${DB_URL}/comments/${postId}/${commentId}.json`, { method: 'DELETE' });
-        // سڕینەوەی ئاگادارکردنەوەی پەیوەندیدار بەو کۆمێنتە (بۆ خاوەنی پۆستەکە)
-        try {
-          await fetch(`${API_URL}/api/notify?targetUserId=${postOwner}&postId=${postId}&commentId=${commentId}`, { method: 'DELETE' });
-        } catch (_) {}
         // سڕینەوەی هەموو ڕیپلەکانی
         try {
           const allRes  = await fetch(`${DB_URL}/comments/${postId}.json`);
