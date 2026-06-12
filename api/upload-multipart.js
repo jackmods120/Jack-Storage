@@ -192,35 +192,16 @@ module.exports = function handler(req, res) {
               thumbId = '';
             }
 
-            // ── file_path ی ڕاستەوخۆ بگرە بۆ فایلی گەورە (>20MB) ──
-            // getFile تەنیا بۆ فایلی بچووکتر لە 20MB کاردەکات، بۆیە
-            // هەر file_path ی ڕاستەوخۆ بگرین ئەگەر بوو، ئەگەرنا بەتاڵ بمێنێتەوە
-            let filePath = '';
-            try {
-              const gpRes  = await new Promise((resolve, reject) => {
-                const gpUrl = `/bot${BOT_TOKEN}/getFile?file_id=${fileId}`;
-                const gpOpt = { hostname: 'api.telegram.org', path: gpUrl, method: 'GET' };
-                const gpReq = https.request(gpOpt, gpRes => {
-                  let b = '';
-                  gpRes.on('data', d => b += d);
-                  gpRes.on('end', () => resolve(b));
-                  gpRes.on('error', reject);
-                });
-                gpReq.setTimeout(10000, () => { gpReq.destroy(); resolve(''); });
-                gpReq.on('error', () => resolve(''));
-                gpReq.end();
-              });
-              if (gpRes) {
-                const gpData = JSON.parse(gpRes);
-                if (gpData.ok && gpData.result?.file_path) {
-                  filePath = gpData.result.file_path;
-                }
-              }
-            } catch(_) { /* file_path نەگرا، بەتاڵ دەمێنێتەوە */ }
+            // ── لینکی ڕاستەوخۆ دروست بکە بە message_id ──
+            // کەناڵ پابلیکە: t.me/username/message_id کاردەکات
+            // هیچ سنووری فایل نییە — 20MB یان 200MB جیاوازی نییە
+            const CHANNEL_USERNAME = process.env.TELEGRAM_CHANNEL_USERNAME || 'jack_storage_apps';
+            const messageId = msg.message_id;
+            const directUrl = `https://t.me/${CHANNEL_USERNAME}/${messageId}`;
 
             return res.status(200).json({
               success: true, file_id: fileId, thumb_id: thumbId,
-              file_path: filePath, type: fileType, message_id: msg.message_id,
+              direct_url: directUrl, message_id: messageId, type: fileType,
             });
           } catch(e) {
             try { res.status(500).json({ error: 'Parse TG response: ' + e.message + ' | body: ' + body.substring(0, 100) }); } catch(e2) {}
