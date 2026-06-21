@@ -1,5 +1,5 @@
-// api/update.js — ناردنی Update لەلایەن Owner + پشکنینی نوێترین وەشان
-// تەنیا Owner دەتوانێت Update بنێرێت (OWNER_UID پشتڕاستی دەکرێتەوە)
+// api/update.js — سیستەمی Force Update (تەنیا owner/admin دەتوانن بنێرن)
+// ذەخیرەکردن لە هەمان DB-ی alight-motion-helper (وەک users/notifications)
 
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -7,53 +7,78 @@ module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  const DB_URL    = process.env.FIREBASE_DB_URL || 'https://jack-9a034-default-rtdb.firebaseio.com';
-  // خاوەنی بەرنامە — تەنیا ئەم uid ـە دەتوانێت Update بنێرێت
-  const OWNER_UID = process.env.OWNER_UID || '';
+  const DB_URL = process.env.FIREBASE_DB_URL_USERS
+    || 'https://alight-motion-helper-default-rtdb.firebaseio.com';
 
   try {
-    // ════ GET — وەرگرتنی نوێترین Update (هەموو پەڕەکان پشکنینی دەکەن) ════
+    // ════ GET — پشکنینی Update (هەموو ئەپ لە onCreate بانگی دەکات) ════
+    // GET /api/update
     if (req.method === 'GET') {
-      const fbRes  = await fetch(`${DB_URL}/app_update.json`);
-      const fbData = await fbRes.json();
-      if (!fbData) return res.status(200).json({ success: true, update: null });
-      return res.status(200).json({ success: true, update: fbData });
+      const r = await fetch(`${DB_URL}/app_update.json`);
+      const data = await r.json();
+
+      if (!data) {
+        return res.status(200).json({ success: true, hasUpdate: false });
+      }
+
+      return res.status(200).json({
+        success    : true,
+        hasUpdate  : data.active === true,
+        version    : data.version    || '',
+        versionCode: data.versionCode || 0,
+        title      : data.title      || 'هەوازکردنی سیستەم',
+        message    : data.message    || '',
+        apkUrl     : data.apkUrl     || '',
+        forceUpdate: data.forceUpdate !== false,   // بنەڕەتی true
+        senderName : data.senderName || '',
+        timestamp  : data.timestamp  || 0,
+      });
     }
 
-    // ════ POST — ناردنی Update نوێ (تەنیا Owner) ════
+    // ════ POST — ناردنی Update نوێ (تەنیا لە AdminPanel) ════
+    // body: { uid, role, version, versionCode, title, message, apkUrl, forceUpdate, senderName }
     if (req.method === 'POST') {
-      const { userId, version, title, message, mandatory, downloadUrl } = req.body;
+      const {
+        uid, role, version, versionCode, title, message,
+        apkUrl, forceUpdate, senderName,
+      } = req.body;
 
-      if (!userId) return res.status(401).json({ error: 'userId required' });
-      if (!OWNER_UID || userId !== OWNER_UID) {
-        return res.status(403).json({ error: 'Only the app owner can send updates' });
+      // ── دڵنیابوون لە دەسەڵات ──
+      if (!uid || !['owner', 'super_admin', 'admin'].includes(role)) {
+        return res.status(403).json({ error: 'دەسەڵاتت نییە Update بنێریت' });
       }
-      if (!version) return res.status(400).json({ error: 'version required' });
+      if (!version || !apkUrl) {
+        return res.status(400).json({ error: 'version و apkUrl پێویستن' });
+      }
 
-      const update = {
+      const record = {
+        active     : true,
         version    : version,
-        title      : title       || 'وەشانێکی نوێ بەردەستە',
-        message    : message     || '',
-        mandatory  : mandatory === true,
-        downloadUrl: downloadUrl || '',
+        versionCode: versionCode || 0,
+        title      : title   || 'وەشانی نوێ بەردەستە',
+        message    : message || `وەشانی ${version} بەردەستە، تکایە نوێی بکەرەوە.`,
+        apkUrl     : apkUrl,
+        forceUpdate: forceUpdate !== false,
+        senderName : senderName || 'بەڕێوەبەر',
+        senderUid  : uid,
         timestamp  : Date.now(),
-        sentBy     : userId,
       };
 
       await fetch(`${DB_URL}/app_update.json`, {
         method : 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body   : JSON.stringify(update),
+        body   : JSON.stringify(record),
       });
 
-      return res.status(200).json({ success: true, update });
+      return res.status(200).json({ success: true, update: record });
     }
 
-    // ════ DELETE — لابردنی Update (تەنیا Owner) ════
+    // ════ DELETE — لابردنی Update (ڕاگرتنی Force Update) ════
+    // body: { uid, role }
     if (req.method === 'DELETE') {
-      const { userId } = req.body || {};
-      if (!OWNER_UID || userId !== OWNER_UID) {
-        return res.status(403).json({ error: 'Only the app owner can remove updates' });
+      const { uid, role } = req.body || {};
+      if (!uid || !['owner', 'super_admin', 'admin'].includes(role)) {
+        return res.status(403).json({ error: 'دەسەڵاتت نییە' });
       }
       await fetch(`${DB_URL}/app_update.json`, { method: 'DELETE' });
       return res.status(200).json({ success: true });
@@ -61,6 +86,7 @@ module.exports = async function handler(req, res) {
 
     return res.status(405).json({ error: 'Method not allowed' });
   } catch (err) {
+    console.error('Update API error:', err);
     return res.status(500).json({ error: err.message });
   }
 };
