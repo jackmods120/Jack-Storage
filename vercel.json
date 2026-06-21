@@ -43,6 +43,10 @@
     {
       "source": "/api/follow",
       "destination": "/api/follow.js"
+    },
+    {
+      "source": "/api/update",
+      "destination": "/api/update.js"
     }
   ]
 }
