@@ -47,6 +47,10 @@
     {
       "source": "/api/update",
       "destination": "/api/update.js"
+    },
+    {
+      "source": "/api/forgot-password",
+      "destination": "/api/forgot-password.js"
     }
   ]
 }
